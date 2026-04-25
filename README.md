@@ -24,6 +24,13 @@ Servidor MCP em Go para buscar empresas no Google Maps e enriquecer os resultado
 - Busca limitada por paginas internas de contato/sobre.
 - Deduplicacao de emails e telefones.
 
+## Contato
+
+Se precisar de consultoria para implantacao, customizacao, integracao MCP, automacoes ou coleta de dados, entre em contato:
+
+- Whatsapp: `55 11 99281-1461`
+- E-mail: `lucas.rocha@felsen.enterprises` / `relationship@technologies.felsen.enterprises`
+
 ## Licenca
 
 Este projeto usa a licenca `Apache-2.0`.
