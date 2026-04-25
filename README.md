@@ -1,5 +1,7 @@
 # MCP Server Scraper Google Maps
 
+[English](README.md) | [Portugues](README.pt-BR.md) | [Espanol](README.es.md)
+
 ```text
   ______    _                  _____         _                 _             _
  |  ____|  | |                |_   _|       | |               | |           (_)
@@ -11,38 +13,38 @@
                                                                        |___/
 ```
 
-Servidor MCP em Go para buscar empresas no Google Maps e enriquecer os resultados com contatos encontrados nos websites oficiais.
+Go MCP server for searching businesses on Google Maps and enriching results with contacts found on official websites.
 
-## Funcionalidades
+## Features
 
-- Ferramenta MCP `scrape_google_maps`.
-- Ferramenta MCP `extract_contacts_from_html`.
-- Modo HTTP opcional com `POST /scrape`, `GET /health` e endpoint MCP remoto `POST /mcp`.
-- Busca no Google Maps com Chrome headless.
-- Extracao de dados do lugar: nome, endereco, telefone, website, avaliacao, numero de reviews, categoria, imagem e URL do Maps.
-- Enriquecimento de contatos em websites: emails, telefones e redes sociais.
-- Busca limitada por paginas internas de contato/sobre.
-- Deduplicacao de emails e telefones.
+- MCP tool `scrape_google_maps`.
+- MCP tool `extract_contacts_from_html`.
+- Optional HTTP mode with `POST /scrape`, `GET /health`, and remote MCP endpoint `POST /mcp`.
+- Google Maps search with headless Chrome.
+- Place data extraction: name, address, phone, website, rating, number of reviews, category, image, and Maps URL.
+- Contact enrichment from websites: emails, phones, and social networks.
+- Limited crawling of internal contact/about pages.
+- Email and phone deduplication.
 
-## Contato
+## Contact
 
-Se precisar de consultoria para implantacao, customizacao, integracao MCP, automacoes ou coleta de dados, entre em contato:
+If you need consulting for deployment, customization, MCP integration, automations, or data collection, get in touch:
 
 - Whatsapp: `55 11 99281-1461`
 - E-mail: `lucas.rocha@felsen.enterprises` / `relationship@technologies.felsen.enterprises`
 
-## Licenca
+## License
 
-Este projeto usa a licenca `Apache-2.0`.
+This project uses the `Apache-2.0` license.
 
-O uso, copia, modificacao, distribuicao e uso comercial sao permitidos conforme descrito no arquivo [LICENSE](LICENSE).
+Use, copying, modification, distribution, and commercial use are allowed as described in [LICENSE](LICENSE).
 
-Este projeto tambem inclui:
+This project also includes:
 
-- [NOTICE](NOTICE), com a atribuicao que deve ser preservada em redistribuicoes.
-- [TRADEMARKS.md](TRADEMARKS.md), com as regras de uso da marca Felsen Technologies.
+- [NOTICE](NOTICE), with the attribution that must be preserved in redistributions.
+- [TRADEMARKS.md](TRADEMARKS.md), with the rules for using the Felsen Technologies trademark.
 
-## Como rodar
+## How to run
 
 ```bash
 go mod tidy
@@ -50,21 +52,21 @@ go test ./...
 go run ./cmd/mcp-googlemaps
 ```
 
-Por padrao o binario roda como servidor MCP por `stdio`.
+By default, the binary runs as an MCP server over `stdio`.
 
-Para usar o modo HTTP:
+To use HTTP mode:
 
 ```bash
 go run ./cmd/mcp-googlemaps --http :3000
 ```
 
-Se estiver rodando localmente sem Chrome instalado, instale Chrome/Edge ou informe o caminho do browser:
+If you are running locally without Chrome installed, install Chrome/Edge or provide the browser path:
 
 ```bash
 CHROME_PATH=/usr/bin/chromium go run ./cmd/mcp-googlemaps --http :3000
 ```
 
-No Windows PowerShell, por exemplo:
+On Windows PowerShell, for example:
 
 ```powershell
 $env:CHROME_PATH="C:\Program Files\Microsoft\Edge\Application\msedge.exe"
@@ -73,120 +75,120 @@ go run .\cmd\mcp-googlemaps --http :3000
 
 ## Docker
 
-Os arquivos Docker ficam na pasta `Docker/`.
+Docker files are in the `Docker/` folder.
 
-Scripts auxiliares para desenvolvimento ficam em `scripts_dev/`:
+Helper development scripts are in `scripts_dev/`:
 
 ```bash
 chmod +x scripts_dev/linux.sh
 ./scripts_dev/linux.sh
 ```
 
-No Windows PowerShell:
+On Windows PowerShell:
 
 ```powershell
 .\scripts_dev\windows.ps1
 ```
 
-Copie o arquivo de exemplo de ambiente antes de subir a stack:
+Copy the sample environment file before starting the stack:
 
 ```bash
 cp .env.example .env
 ```
 
-No Windows PowerShell:
+On Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Edite o `.env` e substitua `HTTP_BEARER_TOKEN` por um token forte.
+Edit `.env` and replace `HTTP_BEARER_TOKEN` with a strong token.
 
-O `Docker/Dockerfile` instala Chromium dentro da imagem e configura `CHROME_PATH=/usr/bin/chromium`.
+The `Docker/Dockerfile` installs Chromium inside the image and sets `CHROME_PATH=/usr/bin/chromium`.
 
 ```bash
 docker build -f Docker/Dockerfile -t mcp-googlemaps .
 docker run --rm -p 3000:3000 mcp-googlemaps
 ```
 
-Para subir a stack com Docker Compose:
+To start the stack with Docker Compose:
 
 ```bash
 docker compose -f Docker/docker-compose.yaml up -d --build
 ```
 
-Variaveis aceitas pelo compose:
+Variables accepted by compose:
 
-- `HTTP_PORT`: porta publicada no host. Padrao: `3000`.
-- `HTTP_BEARER_TOKEN`: bearer token global exigido por todas as rotas HTTP.
-- `MCP_BEARER_TOKEN`: fallback para `HTTP_BEARER_TOKEN`, mantido por compatibilidade.
-- `MCP_ALLOWED_ORIGINS`: origens permitidas para chamadas browser.
-- `TZ`: timezone do container. Padrao: `America/Sao_Paulo`.
+- `HTTP_PORT`: port published on the host. Default: `3000`.
+- `HTTP_BEARER_TOKEN`: global bearer token required by all HTTP routes.
+- `MCP_BEARER_TOKEN`: fallback for `HTTP_BEARER_TOKEN`, kept for compatibility.
+- `MCP_ALLOWED_ORIGINS`: origins allowed for browser calls.
+- `TZ`: container timezone. Default: `America/Sao_Paulo`.
 
-Exemplo com bearer token:
+Example with bearer token:
 
 ```bash
-HTTP_BEARER_TOKEN=seu-token-forte docker compose -f Docker/docker-compose.yaml up -d --build
+HTTP_BEARER_TOKEN=your-strong-token docker compose -f Docker/docker-compose.yaml up -d --build
 ```
 
-No Windows PowerShell:
+On Windows PowerShell:
 
 ```powershell
-$env:HTTP_BEARER_TOKEN="seu-token-forte"
+$env:HTTP_BEARER_TOKEN="your-strong-token"
 docker compose -f Docker/docker-compose.yaml up -d --build
 ```
 
-Exemplo:
+Example:
 
 ```bash
 curl -X POST http://localhost:3000/scrape \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer seu-token-forte" \
-  -d '{"searchQueries":["pizzarias em Curitiba"],"maxPlacesPerQuery":3}'
+  -H "Authorization: Bearer your-strong-token" \
+  -d '{"searchQueries":["pizza restaurants in Curitiba"],"maxPlacesPerQuery":3}'
 ```
 
-## Rotas HTTP
+## HTTP Routes
 
-O modo HTTP e habilitado com:
+HTTP mode is enabled with:
 
 ```bash
 go run ./cmd/mcp-googlemaps --http :3000
 ```
 
-Para usar este servico como MCP remoto na OpenAI ou em outra plataforma compativel, cadastre a URL publica do endpoint MCP:
+To use this service as a remote MCP server in OpenAI or another compatible platform, register the public URL of the MCP endpoint:
 
 ```text
-https://seu-dominio.com/mcp
+https://your-domain.com/mcp
 ```
 
-Exemplo local:
+Local example:
 
 ```text
 http://localhost:3000/mcp
 ```
 
-Em producao, proteja o servico HTTP com bearer token:
+In production, protect the HTTP service with a bearer token:
 
 ```bash
-HTTP_BEARER_TOKEN=seu-token-forte go run ./cmd/mcp-googlemaps --http :3000
+HTTP_BEARER_TOKEN=your-strong-token go run ./cmd/mcp-googlemaps --http :3000
 ```
 
-Todas as chamadas HTTP para `/health`, `/scrape` e `/mcp` deverao enviar:
+All HTTP calls to `/health`, `/scrape`, and `/mcp` must send:
 
 ```http
-Authorization: Bearer seu-token-forte
+Authorization: Bearer your-strong-token
 ```
 
 ### GET /health
 
-Verifica se o servidor esta online.
+Checks whether the server is online.
 
 ```bash
 curl http://localhost:3000/health \
-  -H "Authorization: Bearer seu-token-forte"
+  -H "Authorization: Bearer your-strong-token"
 ```
 
-Resposta:
+Response:
 
 ```json
 {
@@ -196,48 +198,48 @@ Resposta:
 
 ### POST /scrape
 
-Busca empresas no Google Maps e, opcionalmente, enriquece os resultados com emails, telefones e redes sociais encontrados nos websites oficiais.
+Searches businesses on Google Maps and optionally enriches results with emails, phones, and social networks found on official websites.
 
 ```bash
 curl -X POST http://localhost:3000/scrape \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer seu-token-forte" \
+  -H "Authorization: Bearer your-strong-token" \
   -d '{
-    "searchQueries": ["pizzarias em Curitiba"],
+    "searchQueries": ["pizza restaurants in Curitiba"],
     "maxPlacesPerQuery": 20,
     "scrapeEmails": true,
     "scrapePhones": true,
-    "language": "pt-BR"
+    "language": "en-US"
   }'
 ```
 
-Campos do corpo:
+Body fields:
 
-- `searchQueries`: lista de buscas no Google Maps. Obrigatorio; maximo de 10 buscas por chamada.
-- `maxPlacesPerQuery`: maximo de empresas validas por busca. Padrao: `20`; limite maximo: `500`.
-- `scrapeEmails`: busca emails nos websites oficiais. Padrao: `true`.
-- `scrapePhones`: busca telefones nos websites oficiais. Padrao: `true`.
-- `language`: idioma usado no Google Maps. Padrao: `pt-BR`.
-- `proxyConfiguration.proxyUrls`: lista opcional de proxies. O primeiro proxy e usado pelo Chrome.
+- `searchQueries`: list of Google Maps searches. Required; maximum of 10 searches per call.
+- `maxPlacesPerQuery`: maximum number of valid businesses per search. Default: `20`; maximum limit: `500`.
+- `scrapeEmails`: searches for emails on official websites. Default: `true`.
+- `scrapePhones`: searches for phones on official websites. Default: `true`.
+- `language`: language used in Google Maps. Default: `pt-BR`.
+- `proxyConfiguration.proxyUrls`: optional proxy list. The first proxy is used by Chrome.
 
-Exemplo de resposta:
+Response example:
 
 ```json
 {
   "count": 1,
   "results": [
     {
-      "query": "pizzarias em Curitiba",
-      "name": "Nome da empresa",
-      "address": "Rua Exemplo, 123 - Curitiba - PR",
+      "query": "pizza restaurants in Curitiba",
+      "name": "Company name",
+      "address": "Example Street, 123 - Curitiba - PR",
       "phone": "(41) 99999-9999",
       "website": "https://example.com",
       "rating": 4.7,
       "reviewsCount": 123,
-      "category": "Pizzaria",
+      "category": "Pizza restaurant",
       "googleMapsUrl": "https://www.google.com/maps/place/...",
       "imageUrl": "https://lh3.googleusercontent.com/...",
-      "emails": ["contato@example.com"],
+      "emails": ["contact@example.com"],
       "phones": ["(41) 99999-9999"],
       "socialLinks": {
         "facebook": null,
@@ -251,33 +253,33 @@ Exemplo de resposta:
 }
 ```
 
-Possiveis erros:
+Possible errors:
 
-- `400`: JSON invalido ou `searchQueries` vazio.
-- `401`: token bearer ausente ou invalido.
-- `405`: metodo HTTP nao permitido.
-- `503`: token bearer nao configurado no servidor.
-- `499`: cliente cancelou a requisicao antes do fim.
-- `504`: tempo limite atingido durante a raspagem.
-- `500`: erro interno inesperado.
+- `400`: invalid JSON or empty `searchQueries`.
+- `401`: missing or invalid bearer token.
+- `405`: HTTP method not allowed.
+- `503`: bearer token not configured on the server.
+- `499`: client canceled the request before completion.
+- `504`: timeout reached during scraping.
+- `500`: unexpected internal error.
 
 ### POST /mcp
 
-Endpoint MCP remoto via Streamable HTTP. Esta e a rota que deve ser cadastrada na OpenAI, Claude, Cursor, Codex ou qualquer cliente que aceite MCP remoto por HTTP.
+Remote MCP endpoint over Streamable HTTP. This is the route that should be registered in OpenAI, Claude, Cursor, Codex, or any client that accepts remote MCP over HTTP.
 
 ```text
-https://seu-dominio.com/mcp
+https://your-domain.com/mcp
 ```
 
-O endpoint recebe mensagens JSON-RPC MCP por `POST`.
+The endpoint receives MCP JSON-RPC messages by `POST`.
 
-Inicializacao:
+Initialization:
 
 ```bash
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "Authorization: Bearer seu-token-forte" \
+  -H "Authorization: Bearer your-strong-token" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
@@ -293,13 +295,13 @@ curl -X POST http://localhost:3000/mcp \
   }'
 ```
 
-Listar ferramentas:
+List tools:
 
 ```bash
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "Authorization: Bearer seu-token-forte" \
+  -H "Authorization: Bearer your-strong-token" \
   -H "MCP-Protocol-Version: 2025-06-18" \
   -d '{
     "jsonrpc": "2.0",
@@ -309,13 +311,13 @@ curl -X POST http://localhost:3000/mcp \
   }'
 ```
 
-Chamar a ferramenta `scrape_google_maps`:
+Call the `scrape_google_maps` tool:
 
 ```bash
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "Authorization: Bearer seu-token-forte" \
+  -H "Authorization: Bearer your-strong-token" \
   -H "MCP-Protocol-Version: 2025-06-18" \
   -d '{
     "jsonrpc": "2.0",
@@ -324,23 +326,23 @@ curl -X POST http://localhost:3000/mcp \
     "params": {
       "name": "scrape_google_maps",
       "arguments": {
-        "searchQueries": ["pizzarias em Curitiba"],
+        "searchQueries": ["pizza restaurants in Curitiba"],
         "maxPlacesPerQuery": 20,
         "scrapeEmails": true,
         "scrapePhones": true,
-        "language": "pt-BR"
+        "language": "en-US"
       }
     }
   }'
 ```
 
-Chamar a ferramenta `extract_contacts_from_html`:
+Call the `extract_contacts_from_html` tool:
 
 ```bash
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "Authorization: Bearer seu-token-forte" \
+  -H "Authorization: Bearer your-strong-token" \
   -H "MCP-Protocol-Version: 2025-06-18" \
   -d '{
     "jsonrpc": "2.0",
@@ -349,23 +351,23 @@ curl -X POST http://localhost:3000/mcp \
     "params": {
       "name": "extract_contacts_from_html",
       "arguments": {
-        "html": "<html><body>Contato: contato@example.com</body></html>",
+        "html": "<html><body>Contact: contact@example.com</body></html>",
         "baseUrl": "https://example.com"
       }
     }
   }'
 ```
 
-O endpoint `/mcp` tambem aceita:
+The `/mcp` endpoint also accepts:
 
 - `ping`
-- `resources/list`, retornando lista vazia
-- `prompts/list`, retornando lista vazia
-- notificacoes, como `notifications/initialized`, respondendo `202 Accepted`
+- `resources/list`, returning an empty list
+- `prompts/list`, returning an empty list
+- notifications, such as `notifications/initialized`, returning `202 Accepted`
 
-O servidor nao abre stream SSE em `GET /mcp`; para clientes que tentam esse modo, ele responde `405 Method Not Allowed`. O fluxo recomendado e Streamable HTTP por `POST /mcp`.
+The server does not open an SSE stream on `GET /mcp`; for clients that try this mode, it returns `405 Method Not Allowed`. The recommended flow is Streamable HTTP through `POST /mcp`.
 
-#### Exemplo na OpenAI Responses API
+#### OpenAI Responses API example
 
 ```js
 import OpenAI from "openai";
@@ -378,51 +380,51 @@ const response = await client.responses.create({
     {
       type: "mcp",
       server_label: "googlemaps_scraper",
-      server_description: "Busca empresas no Google Maps e extrai contatos comerciais.",
-      server_url: "https://seu-dominio.com/mcp",
+      server_description: "Searches businesses on Google Maps and extracts commercial contacts.",
+      server_url: "https://your-domain.com/mcp",
       authorization: process.env.MCP_ACCESS_TOKEN,
       require_approval: "never"
     }
   ],
-  input: "Busque 20 pizzarias em Curitiba e retorne nome, telefone e website."
+  input: "Search for 20 pizza restaurants in Curitiba and return name, phone, and website."
 });
 
 console.log(response.output_text);
 ```
 
-#### Seguranca HTTP
+#### HTTP Security
 
-Para uso publico, coloque o servico atras de HTTPS e configure `HTTP_BEARER_TOKEN`.
+For public use, put the service behind HTTPS and configure `HTTP_BEARER_TOKEN`.
 
-Quando `HTTP_BEARER_TOKEN` esta definido, todas as rotas HTTP exigem:
+When `HTTP_BEARER_TOKEN` is set, all HTTP routes require:
 
 ```http
 Authorization: Bearer <token>
 ```
 
-Se o token estiver ausente ou invalido, o servidor responde `401 Unauthorized` com `WWW-Authenticate: Bearer realm="mcp-googlemaps"`.
+If the token is missing or invalid, the server responds with `401 Unauthorized` and `WWW-Authenticate: Bearer realm="mcp-googlemaps"`.
 
-Se `HTTP_BEARER_TOKEN` e `MCP_BEARER_TOKEN` nao estiverem definidos, o servidor falha fechado e responde `503 Service Unavailable` para rotas HTTP. Isso evita publicar `/scrape` ou `/mcp` sem protecao por acidente.
+If neither `HTTP_BEARER_TOKEN` nor `MCP_BEARER_TOKEN` is set, the server fails closed and returns `503 Service Unavailable` for HTTP routes. This avoids publishing `/scrape` or `/mcp` without protection by accident.
 
-`MCP_BEARER_TOKEN` ainda e aceito como fallback para compatibilidade, mas `HTTP_BEARER_TOKEN` e o nome recomendado para novas instalacoes.
+`MCP_BEARER_TOKEN` is still accepted as a compatibility fallback, but `HTTP_BEARER_TOKEN` is the recommended name for new installations.
 
-O servidor valida o header `Origin` quando ele estiver presente. Por padrao, chamadas sem header `Origin`, mesma origem e localhost sao aceitas. Para liberar origens de browser especificas, configure:
+The server validates the `Origin` header when it is present. By default, calls without an `Origin` header, same-origin calls, and localhost are accepted. To allow specific browser origins, configure:
 
 ```bash
-MCP_ALLOWED_ORIGINS=https://seu-app.com,https://outro-app.com
+MCP_ALLOWED_ORIGINS=https://your-app.com,https://another-app.com
 ```
 
-Para liberar qualquer origem:
+To allow any origin:
 
 ```bash
 MCP_ALLOWED_ORIGINS=*
 ```
 
-Em producao, prefira listar origens explicitas em vez de usar `*`.
+In production, prefer listing explicit origins instead of using `*`.
 
-## Chamadas MCP
+## MCP Calls
 
-Por padrao, sem `--http`, o binario roda como servidor MCP por `stdio`:
+By default, without `--http`, the binary runs as an MCP server over `stdio`:
 
 ```bash
 go run ./cmd/mcp-googlemaps
@@ -430,7 +432,7 @@ go run ./cmd/mcp-googlemaps
 
 ### initialize
 
-Inicializa a sessao MCP.
+Initializes the MCP session.
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
@@ -438,7 +440,7 @@ Inicializa a sessao MCP.
 
 ### notifications/initialized
 
-Notifica que o cliente concluiu a inicializacao. Esta chamada nao retorna resposta.
+Notifies that the client completed initialization. This call does not return a response.
 
 ```json
 {"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
@@ -446,20 +448,20 @@ Notifica que o cliente concluiu a inicializacao. Esta chamada nao retorna respos
 
 ### tools/list
 
-Lista as ferramentas disponiveis.
+Lists the available tools.
 
 ```json
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 ```
 
-Ferramentas retornadas:
+Returned tools:
 
 - `scrape_google_maps`
 - `extract_contacts_from_html`
 
 ### tools/call: scrape_google_maps
 
-Executa a busca no Google Maps.
+Runs the Google Maps search.
 
 ```json
 {
@@ -469,11 +471,11 @@ Executa a busca no Google Maps.
   "params": {
     "name": "scrape_google_maps",
     "arguments": {
-      "searchQueries": ["pizzarias em Curitiba"],
+      "searchQueries": ["pizza restaurants in Curitiba"],
       "maxPlacesPerQuery": 20,
       "scrapeEmails": true,
       "scrapePhones": true,
-      "language": "pt-BR"
+      "language": "en-US"
     }
   }
 }
@@ -481,7 +483,7 @@ Executa a busca no Google Maps.
 
 ### tools/call: extract_contacts_from_html
 
-Extrai emails, telefones, redes sociais e URLs provaveis de paginas de contato a partir de um HTML bruto.
+Extracts emails, phones, social networks, and likely contact page URLs from raw HTML.
 
 ```json
 {
@@ -491,7 +493,7 @@ Extrai emails, telefones, redes sociais e URLs provaveis de paginas de contato a
   "params": {
     "name": "extract_contacts_from_html",
     "arguments": {
-      "html": "<html><body>Contato: contato@example.com</body></html>",
+      "html": "<html><body>Contact: contact@example.com</body></html>",
       "baseUrl": "https://example.com"
     }
   }
