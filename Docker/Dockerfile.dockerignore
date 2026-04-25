@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+tmp
+dist
+*.log
+*.exe
+*.key
+*.pem
+*.p12
+*.pfx
+*secret*
+*token*

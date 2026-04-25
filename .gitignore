@@ -1,0 +1,58 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+*secret*
+*token*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Local generated bearer token files
+bearer-token.txt
+**/bearer-token.txt
+
+# Go build outputs and caches
+bin/
+dist/
+build/
+tmp/
+coverage.out
+*.test
+*.prof
+*.cover
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs and runtime files
+*.log
+logs/
+*.pid
+*.out
+*.err
+
+# Docker local overrides
+Docker/docker-compose.override.yaml
+Docker/docker-compose.override.yml
+docker-compose.override.yaml
+docker-compose.override.yml
+
+# IDE and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local databases and exports
+*.db
+*.sqlite
+*.sqlite3
+*.csv.local
+exports/
