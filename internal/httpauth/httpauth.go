@@ -3,6 +3,7 @@ package httpauth
 import (
 	"crypto/subtle"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -35,9 +36,31 @@ func ValidBearerAuth(headerValue, expectedToken string) bool {
 	return subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) == 1
 }
 
+func ValidAPIKey(value, expectedToken string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || expectedToken == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(value), []byte(expectedToken)) == 1
+}
+
+func ValidRequestAuth(headers http.Header, expectedToken string) bool {
+	if ValidBearerAuth(headers.Get("Authorization"), expectedToken) {
+		return true
+	}
+	if ValidAPIKey(headers.Get("X-API-Key"), expectedToken) {
+		return true
+	}
+	return ValidAPIKey(headers.Get("Api-Key"), expectedToken)
+}
+
 func AllowedCORSOrigin(origin, host string) (string, bool) {
 	if origin == "" {
 		return "", true
+	}
+
+	if isDefaultAllowedOrigin(origin) {
+		return origin, true
 	}
 
 	for _, allowed := range strings.Split(os.Getenv("MCP_ALLOWED_ORIGINS"), ",") {
@@ -61,6 +84,18 @@ func AllowedCORSOrigin(origin, host string) (string, bool) {
 		return origin, true
 	}
 	return "", false
+}
+
+func isDefaultAllowedOrigin(origin string) bool {
+	switch strings.ToLower(strings.TrimRight(strings.TrimSpace(origin), "/")) {
+	case "https://chatgpt.com",
+		"https://chat.openai.com",
+		"https://platform.openai.com",
+		"https://developers.openai.com":
+		return true
+	default:
+		return false
+	}
 }
 
 func IsLocalhost(host string) bool {

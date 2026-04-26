@@ -107,6 +107,23 @@ func TestHTTPToolsListDoesNotRequireBearerToken(t *testing.T) {
 	}
 }
 
+func TestHTTPToolsListAllowsChatGPTOrigin(t *testing.T) {
+	server := New(nil, nil, nil, nil)
+	body := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Origin", "https://chatgpt.com")
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("scrape_google_maps")) {
+		t.Fatalf("response does not list scrape_google_maps: %s", rec.Body.String())
+	}
+}
+
 func TestHTTPGetReturnsMethodNotAllowed(t *testing.T) {
 	server := New(nil, nil, nil, nil)
 	req := newAuthorizedRequest(t, http.MethodGet, "/mcp", nil)
@@ -160,6 +177,22 @@ func TestHTTPBearerTokenValid(t *testing.T) {
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html>Contact contact@example.com</html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer secret-token")
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestHTTPToolCallAPIKeyHeaderValid(t *testing.T) {
+	t.Setenv("HTTP_BEARER_TOKEN", "")
+	t.Setenv("MCP_BEARER_TOKEN", "secret-token")
+	server := New(nil, nil, nil, nil)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html>Contact contact@example.com</html>"}}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("X-API-Key", "secret-token")
 	rec := httptest.NewRecorder()
 
 	server.HTTPHandler().ServeHTTP(rec, req)

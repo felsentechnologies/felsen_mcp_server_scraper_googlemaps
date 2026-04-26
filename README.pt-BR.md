@@ -419,6 +419,18 @@ Quando `HTTP_BEARER_TOKEN` esta definido, todas as rotas HTTP exigem:
 Authorization: Bearer <token>
 ```
 
+Para o developer mode de ChatGPT Apps, o endpoint MCP tambem aceita headers no estilo API key:
+
+```http
+X-API-Key: <token>
+```
+
+ou:
+
+```http
+Api-Key: <token>
+```
+
 Se o token estiver ausente ou invalido, o servidor responde `401 Unauthorized` com `WWW-Authenticate: Bearer realm="mcp-googlemaps"`.
 
 Se `HTTP_BEARER_TOKEN` e `MCP_BEARER_TOKEN` nao estiverem definidos, o servidor falha fechado e responde `503 Service Unavailable` para rotas HTTP. Isso evita publicar `/scrape` ou `/mcp` sem protecao por acidente.
@@ -427,7 +439,7 @@ Se `HTTP_BEARER_TOKEN` e `MCP_BEARER_TOKEN` nao estiverem definidos, o servidor 
 
 O handler MCP HTTP remoto tambem falha fechado quando nenhum bearer token esta configurado. Isso vale mesmo quando `/mcp` e montado diretamente fora do gateway HTTP incluido.
 
-O servidor valida o header `Origin` quando ele estiver presente. Por padrao, chamadas sem header `Origin`, mesma origem e localhost sao aceitas. Para liberar origens de browser especificas, configure:
+O servidor valida o header `Origin` quando ele estiver presente. Por padrao, chamadas sem header `Origin`, mesma origem, localhost e origins OpenAI/ChatGPT (`https://chatgpt.com`, `https://chat.openai.com`, `https://platform.openai.com`, `https://developers.openai.com`) sao aceitas. Para liberar origens de browser adicionais, configure:
 
 ```bash
 MCP_ALLOWED_ORIGINS=https://seu-app.com,https://outro-app.com

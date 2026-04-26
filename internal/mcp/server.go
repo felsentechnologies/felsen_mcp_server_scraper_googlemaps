@@ -176,7 +176,7 @@ func writeUnauthorizedMCP(w http.ResponseWriter, r *http.Request) bool {
 		writeJSONRPC(w, http.StatusServiceUnavailable, errorResponse(nil, -32001, "server authentication is not configured"))
 		return false
 	}
-	if !httpauth.ValidBearerAuth(r.Header.Get("Authorization"), token) {
+	if !httpauth.ValidRequestAuth(r.Header, token) {
 		w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
 		writeJSONRPC(w, http.StatusUnauthorized, errorResponse(nil, -32001, "unauthorized"))
 		return false

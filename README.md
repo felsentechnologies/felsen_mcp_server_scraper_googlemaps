@@ -181,6 +181,18 @@ All HTTP calls to `/health`, `/scrape`, and `/mcp` must send:
 Authorization: Bearer your-strong-token
 ```
 
+For ChatGPT Apps developer mode, the MCP endpoint also accepts API key style headers:
+
+```http
+X-API-Key: your-strong-token
+```
+
+or:
+
+```http
+Api-Key: your-strong-token
+```
+
 ### GET /health
 
 Checks whether the server is online.
@@ -427,7 +439,7 @@ If neither `HTTP_BEARER_TOKEN` nor `MCP_BEARER_TOKEN` is set, the server fails c
 
 The remote MCP HTTP handler also fails closed when no bearer token is configured. This applies even when `/mcp` is mounted directly outside the bundled HTTP gateway.
 
-The server validates the `Origin` header when it is present. By default, calls without an `Origin` header, same-origin calls, and localhost are accepted. To allow specific browser origins, configure:
+The server validates the `Origin` header when it is present. By default, calls without an `Origin` header, same-origin calls, localhost, and OpenAI/ChatGPT origins (`https://chatgpt.com`, `https://chat.openai.com`, `https://platform.openai.com`, `https://developers.openai.com`) are accepted. To allow additional browser origins, configure:
 
 ```bash
 MCP_ALLOWED_ORIGINS=https://your-app.com,https://another-app.com

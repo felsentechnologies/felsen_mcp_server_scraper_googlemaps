@@ -1,6 +1,9 @@
 package httpauth
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+)
 
 func TestServerBearerTokenPrefersHTTPToken(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "http-token")
@@ -23,6 +26,26 @@ func TestValidBearerAuth(t *testing.T) {
 	}
 }
 
+func TestValidRequestAuthAcceptsAPIKeyHeaders(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("X-API-Key", "secret-token")
+	if !ValidRequestAuth(headers, "secret-token") {
+		t.Fatal("ValidRequestAuth(X-API-Key) = false, want true")
+	}
+
+	headers = http.Header{}
+	headers.Set("Api-Key", "secret-token")
+	if !ValidRequestAuth(headers, "secret-token") {
+		t.Fatal("ValidRequestAuth(Api-Key) = false, want true")
+	}
+
+	headers = http.Header{}
+	headers.Set("Authorization", "Bearer secret-token")
+	if !ValidRequestAuth(headers, "secret-token") {
+		t.Fatal("ValidRequestAuth(Authorization) = false, want true")
+	}
+}
+
 func TestAllowedCORSOrigin(t *testing.T) {
 	t.Setenv("MCP_ALLOWED_ORIGINS", "https://app.example.com")
 
@@ -34,5 +57,20 @@ func TestAllowedCORSOrigin(t *testing.T) {
 	}
 	if got, ok := AllowedCORSOrigin("http://localhost:3000", "api.example.com"); !ok || got != "http://localhost:3000" {
 		t.Fatalf("AllowedCORSOrigin(localhost) = %q, %v", got, ok)
+	}
+}
+
+func TestAllowedCORSOriginAllowsOpenAIClientsByDefault(t *testing.T) {
+	t.Setenv("MCP_ALLOWED_ORIGINS", "")
+
+	for _, origin := range []string{
+		"https://chatgpt.com",
+		"https://chat.openai.com",
+		"https://platform.openai.com",
+		"https://developers.openai.com",
+	} {
+		if got, ok := AllowedCORSOrigin(origin, "googlemaps.mcp.technologies.felsen.enterprises"); !ok || got != origin {
+			t.Fatalf("AllowedCORSOrigin(%q) = %q, %v; want allowed", origin, got, ok)
+		}
 	}
 }

@@ -115,7 +115,7 @@ func withCORS(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, MCP-Protocol-Version, Mcp-Session-Id, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, MCP-Protocol-Version, Mcp-Session-Id, Authorization, X-API-Key, Api-Key")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -143,7 +143,7 @@ func withSecurityGateway(next http.Handler) http.Handler {
 			return
 		}
 
-		if !httpauth.ValidBearerAuth(r.Header.Get("Authorization"), token) {
+		if !httpauth.ValidRequestAuth(r.Header, token) {
 			w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
