@@ -568,22 +568,15 @@ func tools() []map[string]any {
 }
 
 func toolDescriptor(name, title, description string, annotations map[string]any, inputSchema map[string]any, outputSchema map[string]any, invoking, invoked string) map[string]any {
-	return map[string]any{
-		"name":         name,
-		"title":        title,
-		"description":  description,
-		"annotations":  annotations,
-		"inputSchema":  inputSchema,
-		"outputSchema": outputSchema,
-		"_meta": map[string]any{
-			"ui": map[string]any{
-				"visibility": []string{"model", "app"},
-			},
-			"openai/visibility":              "public",
-			"openai/toolInvocation/invoking": invoking,
-			"openai/toolInvocation/invoked":  invoked,
-		},
+	tool := map[string]any{
+		"name":        name,
+		"description": description,
+		"inputSchema": inputSchema,
 	}
+	if len(annotations) > 0 {
+		tool["annotations"] = annotations
+	}
+	return tool
 }
 
 func toolAnnotations(readOnly, destructive, idempotent, openWorld bool) map[string]any {
@@ -619,8 +612,7 @@ func datasetPlaceFilterSchema() map[string]any {
 func toolJSON(id *json.RawMessage, value any) response {
 	payload, _ := json.MarshalIndent(value, "", "  ")
 	return response{JSONRPC: "2.0", ID: id, Result: map[string]any{
-		"structuredContent": value,
-		"content":           []map[string]string{{"type": "text", "text": string(payload)}},
+		"content": []map[string]string{{"type": "text", "text": string(payload)}},
 	}}
 }
 
