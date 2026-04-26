@@ -33,7 +33,15 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.health)
 	mux.HandleFunc("/scrape", s.scrape)
-	mux.Handle("/mcp", mcp.New(nil, nil, s.scraper, s.logger).HTTPHandler())
+	mcpHandler := mcp.New(nil, nil, s.scraper, s.logger).HTTPHandler()
+	mux.Handle("/mcp", mcpHandler)
+	mux.HandleFunc("/mcp/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/mcp/" {
+			http.NotFound(w, r)
+			return
+		}
+		mcpHandler.ServeHTTP(w, r)
+	})
 	return withCORS(withSecurityGateway(mux))
 }
 
@@ -130,7 +138,7 @@ func withSecurityGateway(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if r.URL.Path == "/mcp" {
+		if r.URL.Path == "/mcp" || r.URL.Path == "/mcp/" {
 			next.ServeHTTP(w, r)
 			return
 		}

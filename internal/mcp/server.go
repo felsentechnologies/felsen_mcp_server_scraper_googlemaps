@@ -585,14 +585,14 @@ func validProtocolVersion(version string) bool {
 
 func isSupportedProtocolVersion(version string) bool {
 	switch version {
-	case "2024-11-05", "2025-03-26", latestProtocolVersion:
+	case "2024-11-05", "2025-03-26", "2025-06-18", latestProtocolVersion:
 		return true
 	default:
 		return false
 	}
 }
 
-const latestProtocolVersion = "2025-06-18"
+const latestProtocolVersion = "2025-11-25"
 
 type request struct {
 	JSONRPC string           `json:"jsonrpc"`

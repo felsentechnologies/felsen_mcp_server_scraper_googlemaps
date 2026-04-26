@@ -98,6 +98,21 @@ func TestGatewayAllowsMCPDiscoveryWithoutToken(t *testing.T) {
 	}
 }
 
+func TestGatewayAllowsMCPDiscoveryWithTrailingSlash(t *testing.T) {
+	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
+	t.Setenv("MCP_BEARER_TOKEN", "")
+
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp/", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	New(nil, nil).Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
 func TestGatewayProtectsMCPToolCalls(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
 	t.Setenv("MCP_BEARER_TOKEN", "")

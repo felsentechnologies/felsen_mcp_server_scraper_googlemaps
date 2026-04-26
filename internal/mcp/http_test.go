@@ -13,7 +13,7 @@ import (
 
 func TestHTTPInitialize(t *testing.T) {
 	server := New(nil, nil, nil, nil)
-	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}`)
 	req := newAuthorizedRequest(t, http.MethodPost, "/mcp", body)
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	rec := httptest.NewRecorder()
@@ -34,6 +34,31 @@ func TestHTTPInitialize(t *testing.T) {
 	}
 	if result["protocolVersion"] != latestProtocolVersion {
 		t.Fatalf("protocolVersion = %v, want %s", result["protocolVersion"], latestProtocolVersion)
+	}
+}
+
+func TestHTTPInitializeHonorsOlderSupportedVersion(t *testing.T) {
+	server := New(nil, nil, nil, nil)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`)
+	req := newAuthorizedRequest(t, http.MethodPost, "/mcp", body)
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp response
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	result, ok := resp.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("result type = %T, want map[string]any", resp.Result)
+	}
+	if result["protocolVersion"] != "2025-06-18" {
+		t.Fatalf("protocolVersion = %v, want 2025-06-18", result["protocolVersion"])
 	}
 }
 
@@ -112,6 +137,23 @@ func TestHTTPToolsListAllowsChatGPTOrigin(t *testing.T) {
 	body := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	req.Header.Set("Origin", "https://chatgpt.com")
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("scrape_google_maps")) {
+		t.Fatalf("response does not list scrape_google_maps: %s", rec.Body.String())
+	}
+}
+
+func TestHTTPToolsListAcceptsCurrentProtocolVersion(t *testing.T) {
+	server := New(nil, nil, nil, nil)
+	body := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("MCP-Protocol-Version", latestProtocolVersion)
 	rec := httptest.NewRecorder()
 
 	server.HTTPHandler().ServeHTTP(rec, req)
