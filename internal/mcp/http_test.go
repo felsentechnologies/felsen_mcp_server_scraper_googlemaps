@@ -62,6 +62,31 @@ func TestHTTPInitializeHonorsOlderSupportedVersion(t *testing.T) {
 	}
 }
 
+func TestHTTPInitializeDefaultsToStableProtocolVersion(t *testing.T) {
+	server := New(nil, nil, nil, nil)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+	req := newAuthorizedRequest(t, http.MethodPost, "/mcp", body)
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp response
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	result, ok := resp.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("result type = %T, want map[string]any", resp.Result)
+	}
+	if result["protocolVersion"] != defaultProtocolVersion {
+		t.Fatalf("protocolVersion = %v, want %s", result["protocolVersion"], defaultProtocolVersion)
+	}
+}
+
 func TestHTTPNotificationReturnsAccepted(t *testing.T) {
 	server := New(nil, nil, nil, nil)
 	body := []byte(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`)
@@ -108,6 +133,12 @@ func TestHTTPToolsList(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte("scrape_google_maps")) {
 		t.Fatalf("response does not list scrape_google_maps: %s", rec.Body.String())
 	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"title"`)) {
+		t.Fatalf("response should include tool titles for ChatGPT discovery: %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"annotations"`)) {
+		t.Fatalf("response should include tool annotations for ChatGPT discovery: %s", rec.Body.String())
+	}
 	if bytes.Contains(rec.Body.Bytes(), []byte("update_place_actions")) {
 		t.Fatalf("response should not list experimental dataset tools by default: %s", rec.Body.String())
 	}
@@ -132,7 +163,7 @@ func TestHTTPToolsListDoesNotRequireBearerToken(t *testing.T) {
 	}
 }
 
-func TestHTTPToolsListRequiresBearerTokenWhenConfigured(t *testing.T) {
+func TestHTTPToolsListAllowsDiscoveryWhenTokenConfigured(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
 	t.Setenv("MCP_BEARER_TOKEN", "")
 
@@ -143,8 +174,11 @@ func TestHTTPToolsListRequiresBearerTokenWhenConfigured(t *testing.T) {
 
 	server.HTTPHandler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("scrape_google_maps")) {
+		t.Fatalf("response does not list scrape_google_maps: %s", rec.Body.String())
 	}
 }
 

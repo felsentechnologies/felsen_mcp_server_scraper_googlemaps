@@ -83,7 +83,7 @@ func TestGatewayProtectsScrape(t *testing.T) {
 	}
 }
 
-func TestGatewayProtectsMCPDiscoveryWithoutToken(t *testing.T) {
+func TestGatewayAllowsMCPDiscoveryWithoutToken(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
 	t.Setenv("MCP_BEARER_TOKEN", "")
 
@@ -93,12 +93,12 @@ func TestGatewayProtectsMCPDiscoveryWithoutToken(t *testing.T) {
 
 	New(nil, nil).Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
 
-func TestGatewayProtectsMCPDiscoveryWithTrailingSlash(t *testing.T) {
+func TestGatewayAllowsMCPDiscoveryWithTrailingSlash(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
 	t.Setenv("MCP_BEARER_TOKEN", "")
 
@@ -108,8 +108,8 @@ func TestGatewayProtectsMCPDiscoveryWithTrailingSlash(t *testing.T) {
 
 	New(nil, nil).Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
 

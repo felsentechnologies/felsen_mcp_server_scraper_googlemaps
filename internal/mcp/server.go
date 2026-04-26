@@ -74,11 +74,6 @@ func (s *Server) Serve(ctx context.Context) error {
 
 func (s *Server) HTTPHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !validMCPRequestAuth(r) {
-			w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
-			writeJSONRPC(w, http.StatusUnauthorized, errorResponse(nil, -32001, "unauthorized"))
-			return
-		}
 		if _, ok := httpauth.AllowedCORSOrigin(r.Header.Get("Origin"), r.Host); !ok {
 			writeJSONRPC(w, http.StatusForbidden, errorResponse(nil, -32000, "forbidden origin"))
 			return
@@ -103,12 +98,20 @@ func (s *Server) HTTPHandler() http.Handler {
 	})
 }
 
-func validMCPRequestAuth(r *http.Request) bool {
+func validMCPMethodAuth(method string, r *http.Request) bool {
+	if method != "tools/call" {
+		return true
+	}
 	token := httpauth.ServerBearerToken()
 	if token == "" {
 		return true
 	}
 	return httpauth.ValidRequestAuth(r.Header, token)
+}
+
+func writeUnauthorizedMCP(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
+	writeJSONRPC(w, http.StatusUnauthorized, errorResponse(nil, -32001, "unauthorized"))
 }
 
 func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +141,10 @@ func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
+	if !validMCPMethodAuth(req.Method, r) {
+		writeUnauthorizedMCP(w)
+		return
+	}
 	resp, ok := s.handle(r.Context(), req)
 	if !ok {
 		w.WriteHeader(http.StatusAccepted)
@@ -161,6 +168,10 @@ func (s *Server) handleHTTPBatch(w http.ResponseWriter, r *http.Request, body []
 	for _, req := range reqs {
 		if req.Method == "" {
 			continue
+		}
+		if !validMCPMethodAuth(req.Method, r) {
+			writeUnauthorizedMCP(w)
+			return
 		}
 		resp, ok := s.handle(r.Context(), req)
 		if ok {
@@ -388,10 +399,12 @@ func unmarshalToolArguments(params json.RawMessage, target any) error {
 
 func tools() []map[string]any {
 	tools := []map[string]any{
-		{
-			"name":        "scrape_google_maps",
-			"description": "Search Google Maps and extract place data plus emails, phones and social links from business websites.",
-			"inputSchema": map[string]any{
+		toolDescriptor(
+			"scrape_google_maps",
+			"Scrape Google Maps",
+			"Use this when you need to search Google Maps and extract place data plus emails, phones, social links, and optional reviews from business websites.",
+			toolAnnotations(false, false, false, true),
+			map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
@@ -403,7 +416,14 @@ func tools() []map[string]any {
 					"maxPlacesPerQuery": map[string]any{"type": "integer", "default": 20, "minimum": 1, "maximum": 500},
 					"scrapeEmails":      map[string]any{"type": "boolean", "default": true},
 					"scrapePhones":      map[string]any{"type": "boolean", "default": true},
-					"language":          map[string]any{"type": "string", "default": "pt-BR"},
+					"scrapeReviews":     map[string]any{"type": "boolean", "default": false},
+					"maxReviewsPerPlace": map[string]any{
+						"type":    "integer",
+						"default": 10,
+						"minimum": 0,
+						"maximum": 100,
+					},
+					"language": map[string]any{"type": "string", "default": "pt-BR"},
 					"proxyConfiguration": map[string]any{
 						"type":                 "object",
 						"additionalProperties": false,
@@ -414,11 +434,13 @@ func tools() []map[string]any {
 				},
 				"required": []string{"searchQueries"},
 			},
-		},
-		{
-			"name":        "extract_contacts_from_html",
-			"description": "Extract emails, phones, social links and optional contact page URLs from a raw HTML string.",
-			"inputSchema": map[string]any{
+		),
+		toolDescriptor(
+			"extract_contacts_from_html",
+			"Extract Contacts From HTML",
+			"Use this when you already have raw HTML and need emails, phones, social links, or likely contact page URLs.",
+			toolAnnotations(true, false, true, false),
+			map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
@@ -427,7 +449,7 @@ func tools() []map[string]any {
 				},
 				"required": []string{"html"},
 			},
-		},
+		),
 	}
 	if exposeExperimentalTools() {
 		tools = append(tools,
@@ -437,17 +459,6 @@ func tools() []map[string]any {
 				"Use this when you need to browse persisted dataset places with filters for query, category, rating, reviews, and actions.",
 				toolAnnotations(true, false, true, false),
 				datasetPlaceFilterSchema(),
-				map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"total":   map[string]any{"type": "integer"},
-						"limit":   map[string]any{"type": "integer"},
-						"offset":  map[string]any{"type": "integer"},
-						"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-					},
-				},
-				"Loading saved places...",
-				"Saved places ready",
 			),
 			toolDescriptor(
 				"list_pending_action_places",
@@ -455,17 +466,6 @@ func tools() []map[string]any {
 				"Use this when you need persisted places that still have no actions or are missing a specific action type.",
 				toolAnnotations(true, false, true, false),
 				datasetPlaceFilterSchema(),
-				map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"total":   map[string]any{"type": "integer"},
-						"limit":   map[string]any{"type": "integer"},
-						"offset":  map[string]any{"type": "integer"},
-						"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-					},
-				},
-				"Finding pending places...",
-				"Pending places ready",
 			),
 			toolDescriptor(
 				"get_dataset_place",
@@ -480,9 +480,6 @@ func tools() []map[string]any {
 						"placeKey": map[string]any{"type": "string"},
 					},
 				},
-				map[string]any{"type": "object"},
-				"Loading place details...",
-				"Place details ready",
 			),
 			toolDescriptor(
 				"update_place_actions",
@@ -502,9 +499,6 @@ func tools() []map[string]any {
 					},
 					"required": []string{"actions"},
 				},
-				map[string]any{"type": "object"},
-				"Updating place actions...",
-				"Place actions updated",
 			),
 			toolDescriptor(
 				"append_place_action",
@@ -521,9 +515,6 @@ func tools() []map[string]any {
 					},
 					"required": []string{"action"},
 				},
-				map[string]any{"type": "object"},
-				"Appending place action...",
-				"Place action appended",
 			),
 		)
 	}
@@ -535,9 +526,10 @@ func exposeExperimentalTools() bool {
 	return value == "1" || value == "true" || value == "yes"
 }
 
-func toolDescriptor(name, title, description string, annotations map[string]any, inputSchema map[string]any, outputSchema map[string]any, invoking, invoked string) map[string]any {
+func toolDescriptor(name, title, description string, annotations map[string]any, inputSchema map[string]any) map[string]any {
 	tool := map[string]any{
 		"name":        name,
+		"title":       title,
 		"description": description,
 		"inputSchema": inputSchema,
 	}
@@ -608,7 +600,7 @@ func negotiatedProtocolVersion(params json.RawMessage) string {
 	if len(params) > 0 && json.Unmarshal(params, &initParams) == nil && isSupportedProtocolVersion(initParams.ProtocolVersion) {
 		return initParams.ProtocolVersion
 	}
-	return latestProtocolVersion
+	return defaultProtocolVersion
 }
 
 func validProtocolVersion(version string) bool {
@@ -624,7 +616,10 @@ func isSupportedProtocolVersion(version string) bool {
 	}
 }
 
-const latestProtocolVersion = "2025-11-25"
+const (
+	defaultProtocolVersion = "2025-06-18"
+	latestProtocolVersion  = "2025-11-25"
+)
 
 type request struct {
 	JSONRPC string           `json:"jsonrpc"`
