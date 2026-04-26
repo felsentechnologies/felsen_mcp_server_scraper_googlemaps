@@ -74,6 +74,11 @@ func (s *Server) Serve(ctx context.Context) error {
 
 func (s *Server) HTTPHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !validMCPRequestAuth(r) {
+			w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
+			writeJSONRPC(w, http.StatusUnauthorized, errorResponse(nil, -32001, "unauthorized"))
+			return
+		}
 		if _, ok := httpauth.AllowedCORSOrigin(r.Header.Get("Origin"), r.Host); !ok {
 			writeJSONRPC(w, http.StatusForbidden, errorResponse(nil, -32000, "forbidden origin"))
 			return
@@ -96,6 +101,14 @@ func (s *Server) HTTPHandler() http.Handler {
 			writeJSONRPC(w, http.StatusMethodNotAllowed, errorResponse(nil, -32600, "method not allowed"))
 		}
 	})
+}
+
+func validMCPRequestAuth(r *http.Request) bool {
+	token := httpauth.ServerBearerToken()
+	if token == "" {
+		return true
+	}
+	return httpauth.ValidRequestAuth(r.Header, token)
 }
 
 func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
@@ -125,9 +138,6 @@ func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	if requiresBearerAuth(req.Method) && !writeUnauthorizedMCP(w, r) {
-		return
-	}
 	resp, ok := s.handle(r.Context(), req)
 	if !ok {
 		w.WriteHeader(http.StatusAccepted)
@@ -149,9 +159,6 @@ func (s *Server) handleHTTPBatch(w http.ResponseWriter, r *http.Request, body []
 
 	responses := make([]response, 0, len(reqs))
 	for _, req := range reqs {
-		if requiresBearerAuth(req.Method) && !writeUnauthorizedMCP(w, r) {
-			return
-		}
 		if req.Method == "" {
 			continue
 		}
@@ -165,29 +172,6 @@ func (s *Server) handleHTTPBatch(w http.ResponseWriter, r *http.Request, body []
 		return
 	}
 	writeJSONRPC(w, http.StatusOK, responses)
-}
-
-func requiresBearerAuth(method string) bool {
-	return method == "tools/call" && requireToolAuth()
-}
-
-func writeUnauthorizedMCP(w http.ResponseWriter, r *http.Request) bool {
-	token := httpauth.ServerBearerToken()
-	if token == "" {
-		writeJSONRPC(w, http.StatusServiceUnavailable, errorResponse(nil, -32001, "server authentication is not configured"))
-		return false
-	}
-	if !httpauth.ValidRequestAuth(r.Header, token) {
-		w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
-		writeJSONRPC(w, http.StatusUnauthorized, errorResponse(nil, -32001, "unauthorized"))
-		return false
-	}
-	return true
-}
-
-func requireToolAuth() bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv("MCP_REQUIRE_TOOL_AUTH")))
-	return value == "1" || value == "true" || value == "yes"
 }
 
 func (s *Server) handle(ctx context.Context, req request) (response, bool) {
@@ -404,12 +388,10 @@ func unmarshalToolArguments(params json.RawMessage, target any) error {
 
 func tools() []map[string]any {
 	tools := []map[string]any{
-		toolDescriptor(
-			"scrape_google_maps",
-			"Scrape Google Maps",
-			"Use this when you need to search Google Maps and extract place data plus emails, phones, and social links from business websites.",
-			toolAnnotations(true, false, true, true),
-			map[string]any{
+		{
+			"name":        "scrape_google_maps",
+			"description": "Search Google Maps and extract place data plus emails, phones and social links from business websites.",
+			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
@@ -432,23 +414,11 @@ func tools() []map[string]any {
 				},
 				"required": []string{"searchQueries"},
 			},
-			map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"count":   map[string]any{"type": "integer"},
-					"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-				},
-				"required": []string{"count", "results"},
-			},
-			"Searching Google Maps...",
-			"Google Maps results ready",
-		),
-		toolDescriptor(
-			"extract_contacts_from_html",
-			"Extract Contacts From HTML",
-			"Use this when you already have raw HTML and need emails, phones, social links, or likely contact page URLs.",
-			toolAnnotations(true, false, true, false),
-			map[string]any{
+		},
+		{
+			"name":        "extract_contacts_from_html",
+			"description": "Extract emails, phones, social links and optional contact page URLs from a raw HTML string.",
+			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
@@ -457,18 +427,7 @@ func tools() []map[string]any {
 				},
 				"required": []string{"html"},
 			},
-			map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"emails":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"phones":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"socialLinks":     map[string]any{"type": "object"},
-					"contactPageUrls": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				},
-			},
-			"Extracting contacts...",
-			"Contacts extracted",
-		),
+		},
 	}
 	if exposeExperimentalTools() {
 		tools = append(tools,
@@ -577,24 +536,15 @@ func exposeExperimentalTools() bool {
 }
 
 func toolDescriptor(name, title, description string, annotations map[string]any, inputSchema map[string]any, outputSchema map[string]any, invoking, invoked string) map[string]any {
-	securitySchemes := []map[string]any{{"type": "noauth"}}
-	return map[string]any{
-		"name":            name,
-		"title":           title,
-		"description":     description,
-		"inputSchema":     inputSchema,
-		"outputSchema":    outputSchema,
-		"annotations":     annotations,
-		"securitySchemes": securitySchemes,
-		"_meta": map[string]any{
-			"securitySchemes": securitySchemes,
-			"ui": map[string]any{
-				"visibility": []string{"model", "app"},
-			},
-			"openai/toolInvocation/invoking": invoking,
-			"openai/toolInvocation/invoked":  invoked,
-		},
+	tool := map[string]any{
+		"name":        name,
+		"description": description,
+		"inputSchema": inputSchema,
 	}
+	if len(annotations) > 0 {
+		tool["annotations"] = annotations
+	}
+	return tool
 }
 
 func toolAnnotations(readOnly, destructive, idempotent, openWorld bool) map[string]any {
@@ -630,8 +580,7 @@ func datasetPlaceFilterSchema() map[string]any {
 func toolJSON(id *json.RawMessage, value any) response {
 	payload, _ := json.MarshalIndent(value, "", "  ")
 	return response{JSONRPC: "2.0", ID: id, Result: map[string]any{
-		"structuredContent": value,
-		"content":           []map[string]string{{"type": "text", "text": string(payload)}},
+		"content": []map[string]string{{"type": "text", "text": string(payload)}},
 	}}
 }
 
