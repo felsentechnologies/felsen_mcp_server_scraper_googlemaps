@@ -108,8 +108,8 @@ func TestHTTPToolsList(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte("scrape_google_maps")) {
 		t.Fatalf("response does not list scrape_google_maps: %s", rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte("update_place_actions")) {
-		t.Fatalf("response does not list dataset action tools: %s", rec.Body.String())
+	if bytes.Contains(rec.Body.Bytes(), []byte("update_place_actions")) {
+		t.Fatalf("response should not list experimental dataset tools by default: %s", rec.Body.String())
 	}
 }
 
@@ -127,8 +127,8 @@ func TestHTTPToolsListDoesNotRequireBearerToken(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte("list_dataset_places")) {
-		t.Fatalf("response does not list dataset tools: %s", rec.Body.String())
+	if bytes.Contains(rec.Body.Bytes(), []byte("list_dataset_places")) {
+		t.Fatalf("response should not list experimental dataset tools by default: %s", rec.Body.String())
 	}
 }
 
@@ -166,6 +166,24 @@ func TestHTTPToolsListAcceptsCurrentProtocolVersion(t *testing.T) {
 	}
 	if bytes.Contains(rec.Body.Bytes(), []byte(`"openai/visibility"`)) {
 		t.Fatalf("response should not include unsupported OpenAI visibility metadata: %s", rec.Body.String())
+	}
+}
+
+func TestHTTPToolsListIncludesExperimentalToolsWhenEnabled(t *testing.T) {
+	t.Setenv("MCP_EXPERIMENTAL_TOOLS", "true")
+
+	server := New(nil, nil, nil, nil)
+	body := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("list_dataset_places")) {
+		t.Fatalf("response does not list experimental dataset tools: %s", rec.Body.String())
 	}
 }
 

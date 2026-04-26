@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"mcp_server_scraper_googlemaps/internal/dataset"
@@ -397,15 +398,12 @@ func unmarshalToolArguments(params json.RawMessage, target any) error {
 }
 
 func tools() []map[string]any {
-	return []map[string]any{
-		toolDescriptor(
-			"scrape_google_maps",
-			"Scrape Google Maps",
-			"Use this when you need to search Google Maps and extract business data, emails, phones, social links, and optional reviews.",
-			toolAnnotations(false, false, false, true),
-			map[string]any{
-				"type":                 "object",
-				"additionalProperties": false,
+	tools := []map[string]any{
+		{
+			"name":        "scrape_google_maps",
+			"description": "Search Google Maps and extract place data plus emails, phones and social links from business websites.",
+			"inputSchema": map[string]any{
+				"type": "object",
 				"properties": map[string]any{
 					"searchQueries": map[string]any{
 						"type":        "array",
@@ -415,17 +413,9 @@ func tools() []map[string]any {
 					"maxPlacesPerQuery": map[string]any{"type": "integer", "default": 20, "minimum": 1, "maximum": 500},
 					"scrapeEmails":      map[string]any{"type": "boolean", "default": true},
 					"scrapePhones":      map[string]any{"type": "boolean", "default": true},
-					"scrapeReviews":     map[string]any{"type": "boolean", "default": false},
-					"maxReviewsPerPlace": map[string]any{
-						"type":    "integer",
-						"default": 10,
-						"minimum": 0,
-						"maximum": 100,
-					},
-					"language": map[string]any{"type": "string", "default": "pt-BR"},
+					"language":          map[string]any{"type": "string", "default": "pt-BR"},
 					"proxyConfiguration": map[string]any{
-						"type":                 "object",
-						"additionalProperties": false,
+						"type": "object",
 						"properties": map[string]any{
 							"proxyUrls": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						},
@@ -433,138 +423,124 @@ func tools() []map[string]any {
 				},
 				"required": []string{"searchQueries"},
 			},
-			map[string]any{
+		},
+		{
+			"name":        "extract_contacts_from_html",
+			"description": "Extract emails, phones, social links and optional contact page URLs from a raw HTML string.",
+			"inputSchema": map[string]any{
 				"type": "object",
-				"properties": map[string]any{
-					"count":   map[string]any{"type": "integer"},
-					"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-				},
-				"required": []string{"count", "results"},
-			},
-			"Searching Google Maps...",
-			"Google Maps results ready",
-		),
-		toolDescriptor(
-			"list_dataset_places",
-			"List Dataset Places",
-			"Use this when you need to browse persisted dataset places with filters for query, category, rating, reviews, and actions.",
-			toolAnnotations(true, false, true, false),
-			datasetPlaceFilterSchema(),
-			map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"total":   map[string]any{"type": "integer"},
-					"limit":   map[string]any{"type": "integer"},
-					"offset":  map[string]any{"type": "integer"},
-					"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-				},
-			},
-			"Loading saved places...",
-			"Saved places ready",
-		),
-		toolDescriptor(
-			"list_pending_action_places",
-			"List Pending Action Places",
-			"Use this when you need persisted places that still have no actions or are missing a specific action type.",
-			toolAnnotations(true, false, true, false),
-			datasetPlaceFilterSchema(),
-			map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"total":   map[string]any{"type": "integer"},
-					"limit":   map[string]any{"type": "integer"},
-					"offset":  map[string]any{"type": "integer"},
-					"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-				},
-			},
-			"Finding pending places...",
-			"Pending places ready",
-		),
-		toolDescriptor(
-			"get_dataset_place",
-			"Get Dataset Place",
-			"Use this when you need the full persisted record for one place by id or placeKey.",
-			toolAnnotations(true, false, true, false),
-			map[string]any{
-				"type":                 "object",
-				"additionalProperties": false,
-				"properties": map[string]any{
-					"id":       map[string]any{"type": "integer"},
-					"placeKey": map[string]any{"type": "string"},
-				},
-			},
-			map[string]any{"type": "object"},
-			"Loading place details...",
-			"Place details ready",
-		),
-		toolDescriptor(
-			"update_place_actions",
-			"Update Place Actions",
-			"Use this when you need to replace the actions stored for one persisted place.",
-			toolAnnotations(false, true, true, false),
-			map[string]any{
-				"type":                 "object",
-				"additionalProperties": false,
-				"properties": map[string]any{
-					"id":       map[string]any{"type": "integer"},
-					"placeKey": map[string]any{"type": "string"},
-					"actions": map[string]any{
-						"type":  "array",
-						"items": map[string]any{"type": "object"},
-					},
-				},
-				"required": []string{"actions"},
-			},
-			map[string]any{"type": "object"},
-			"Updating place actions...",
-			"Place actions updated",
-		),
-		toolDescriptor(
-			"append_place_action",
-			"Append Place Action",
-			"Use this when you need to append one new action to a persisted place without replacing existing actions.",
-			toolAnnotations(false, false, false, false),
-			map[string]any{
-				"type":                 "object",
-				"additionalProperties": false,
-				"properties": map[string]any{
-					"id":       map[string]any{"type": "integer"},
-					"placeKey": map[string]any{"type": "string"},
-					"action":   map[string]any{"type": "object"},
-				},
-				"required": []string{"action"},
-			},
-			map[string]any{"type": "object"},
-			"Appending place action...",
-			"Place action appended",
-		),
-		toolDescriptor(
-			"extract_contacts_from_html",
-			"Extract Contacts From HTML",
-			"Use this when you already have raw HTML and need emails, phones, social links, or likely contact page URLs.",
-			toolAnnotations(true, false, true, false),
-			map[string]any{
-				"type":                 "object",
-				"additionalProperties": false,
 				"properties": map[string]any{
 					"html":    map[string]any{"type": "string"},
 					"baseUrl": map[string]any{"type": "string"},
 				},
 				"required": []string{"html"},
 			},
-			map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"emails":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"phones":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"socialLinks":     map[string]any{"type": "object"},
-					"contactPageUrls": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				},
-			},
-			"Extracting contacts...",
-			"Contacts extracted",
-		),
+		},
 	}
+	if exposeExperimentalTools() {
+		tools = append(tools,
+			toolDescriptor(
+				"list_dataset_places",
+				"List Dataset Places",
+				"Use this when you need to browse persisted dataset places with filters for query, category, rating, reviews, and actions.",
+				toolAnnotations(true, false, true, false),
+				datasetPlaceFilterSchema(),
+				map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"total":   map[string]any{"type": "integer"},
+						"limit":   map[string]any{"type": "integer"},
+						"offset":  map[string]any{"type": "integer"},
+						"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+				},
+				"Loading saved places...",
+				"Saved places ready",
+			),
+			toolDescriptor(
+				"list_pending_action_places",
+				"List Pending Action Places",
+				"Use this when you need persisted places that still have no actions or are missing a specific action type.",
+				toolAnnotations(true, false, true, false),
+				datasetPlaceFilterSchema(),
+				map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"total":   map[string]any{"type": "integer"},
+						"limit":   map[string]any{"type": "integer"},
+						"offset":  map[string]any{"type": "integer"},
+						"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+				},
+				"Finding pending places...",
+				"Pending places ready",
+			),
+			toolDescriptor(
+				"get_dataset_place",
+				"Get Dataset Place",
+				"Use this when you need the full persisted record for one place by id or placeKey.",
+				toolAnnotations(true, false, true, false),
+				map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"properties": map[string]any{
+						"id":       map[string]any{"type": "integer"},
+						"placeKey": map[string]any{"type": "string"},
+					},
+				},
+				map[string]any{"type": "object"},
+				"Loading place details...",
+				"Place details ready",
+			),
+			toolDescriptor(
+				"update_place_actions",
+				"Update Place Actions",
+				"Use this when you need to replace the actions stored for one persisted place.",
+				toolAnnotations(false, true, true, false),
+				map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"properties": map[string]any{
+						"id":       map[string]any{"type": "integer"},
+						"placeKey": map[string]any{"type": "string"},
+						"actions": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"type": "object"},
+						},
+					},
+					"required": []string{"actions"},
+				},
+				map[string]any{"type": "object"},
+				"Updating place actions...",
+				"Place actions updated",
+			),
+			toolDescriptor(
+				"append_place_action",
+				"Append Place Action",
+				"Use this when you need to append one new action to a persisted place without replacing existing actions.",
+				toolAnnotations(false, false, false, false),
+				map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"properties": map[string]any{
+						"id":       map[string]any{"type": "integer"},
+						"placeKey": map[string]any{"type": "string"},
+						"action":   map[string]any{"type": "object"},
+					},
+					"required": []string{"action"},
+				},
+				map[string]any{"type": "object"},
+				"Appending place action...",
+				"Place action appended",
+			),
+		)
+	}
+	return tools
+}
+
+func exposeExperimentalTools() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("MCP_EXPERIMENTAL_TOOLS")))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func toolDescriptor(name, title, description string, annotations map[string]any, inputSchema map[string]any, outputSchema map[string]any, invoking, invoked string) map[string]any {
