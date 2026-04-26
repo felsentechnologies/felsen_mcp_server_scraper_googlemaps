@@ -108,6 +108,12 @@ func TestHTTPToolsList(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte("scrape_google_maps")) {
 		t.Fatalf("response does not list scrape_google_maps: %s", rec.Body.String())
 	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"securitySchemes":[{"type":"noauth"}]`)) {
+		t.Fatalf("response does not include noauth securitySchemes: %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"_meta":`)) || !bytes.Contains(rec.Body.Bytes(), []byte(`"securitySchemes":[{"type":"noauth"}]`)) {
+		t.Fatalf("response does not include _meta.securitySchemes: %s", rec.Body.String())
+	}
 	if bytes.Contains(rec.Body.Bytes(), []byte("update_place_actions")) {
 		t.Fatalf("response should not list experimental dataset tools by default: %s", rec.Body.String())
 	}
@@ -164,8 +170,8 @@ func TestHTTPToolsListAcceptsCurrentProtocolVersion(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte("scrape_google_maps")) {
 		t.Fatalf("response does not list scrape_google_maps: %s", rec.Body.String())
 	}
-	if bytes.Contains(rec.Body.Bytes(), []byte(`"openai/visibility"`)) {
-		t.Fatalf("response should not include unsupported OpenAI visibility metadata: %s", rec.Body.String())
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"openai/toolInvocation/invoking":"Searching Google Maps..."`)) {
+		t.Fatalf("response does not include tool invocation metadata: %s", rec.Body.String())
 	}
 }
 
@@ -199,9 +205,25 @@ func TestHTTPGetReturnsMethodNotAllowed(t *testing.T) {
 	}
 }
 
-func TestHTTPToolCallBearerTokenRequired(t *testing.T) {
+func TestHTTPToolCallDoesNotRequireBearerTokenByDefault(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "")
 	t.Setenv("MCP_BEARER_TOKEN", "secret-token")
+	server := New(nil, nil, nil, nil)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html></html>"}}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestHTTPToolCallBearerTokenRequiredWhenEnabled(t *testing.T) {
+	t.Setenv("HTTP_BEARER_TOKEN", "")
+	t.Setenv("MCP_BEARER_TOKEN", "secret-token")
+	t.Setenv("MCP_REQUIRE_TOOL_AUTH", "true")
 	server := New(nil, nil, nil, nil)
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html></html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
@@ -220,6 +242,7 @@ func TestHTTPToolCallBearerTokenRequired(t *testing.T) {
 func TestHTTPBearerTokenInvalid(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "")
 	t.Setenv("MCP_BEARER_TOKEN", "secret-token")
+	t.Setenv("MCP_REQUIRE_TOOL_AUTH", "true")
 	server := New(nil, nil, nil, nil)
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html></html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
@@ -236,6 +259,7 @@ func TestHTTPBearerTokenInvalid(t *testing.T) {
 func TestHTTPBearerTokenValid(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "")
 	t.Setenv("MCP_BEARER_TOKEN", "secret-token")
+	t.Setenv("MCP_REQUIRE_TOOL_AUTH", "true")
 	server := New(nil, nil, nil, nil)
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html>Contact contact@example.com</html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
@@ -247,14 +271,15 @@ func TestHTTPBearerTokenValid(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if bytes.Contains(rec.Body.Bytes(), []byte(`"structuredContent"`)) {
-		t.Fatalf("response should not include structuredContent: %s", rec.Body.String())
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"structuredContent"`)) {
+		t.Fatalf("response does not include structuredContent: %s", rec.Body.String())
 	}
 }
 
 func TestHTTPToolCallAPIKeyHeaderValid(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "")
 	t.Setenv("MCP_BEARER_TOKEN", "secret-token")
+	t.Setenv("MCP_REQUIRE_TOOL_AUTH", "true")
 	server := New(nil, nil, nil, nil)
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html>Contact contact@example.com</html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
@@ -271,6 +296,7 @@ func TestHTTPToolCallAPIKeyHeaderValid(t *testing.T) {
 func TestHTTPBearerTokenFailsClosedWhenEnvEmpty(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "")
 	t.Setenv("MCP_BEARER_TOKEN", "")
+	t.Setenv("MCP_REQUIRE_TOOL_AUTH", "true")
 
 	server := New(nil, nil, nil, nil)
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html></html>"}}}`)

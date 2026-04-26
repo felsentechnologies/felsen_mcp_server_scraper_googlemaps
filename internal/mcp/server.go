@@ -168,7 +168,7 @@ func (s *Server) handleHTTPBatch(w http.ResponseWriter, r *http.Request, body []
 }
 
 func requiresBearerAuth(method string) bool {
-	return method == "tools/call"
+	return method == "tools/call" && requireToolAuth()
 }
 
 func writeUnauthorizedMCP(w http.ResponseWriter, r *http.Request) bool {
@@ -183,6 +183,11 @@ func writeUnauthorizedMCP(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func requireToolAuth() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("MCP_REQUIRE_TOOL_AUTH")))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func (s *Server) handle(ctx context.Context, req request) (response, bool) {
@@ -399,11 +404,14 @@ func unmarshalToolArguments(params json.RawMessage, target any) error {
 
 func tools() []map[string]any {
 	tools := []map[string]any{
-		{
-			"name":        "scrape_google_maps",
-			"description": "Search Google Maps and extract place data plus emails, phones and social links from business websites.",
-			"inputSchema": map[string]any{
-				"type": "object",
+		toolDescriptor(
+			"scrape_google_maps",
+			"Scrape Google Maps",
+			"Use this when you need to search Google Maps and extract place data plus emails, phones, and social links from business websites.",
+			toolAnnotations(true, false, true, true),
+			map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]any{
 					"searchQueries": map[string]any{
 						"type":        "array",
@@ -415,7 +423,8 @@ func tools() []map[string]any {
 					"scrapePhones":      map[string]any{"type": "boolean", "default": true},
 					"language":          map[string]any{"type": "string", "default": "pt-BR"},
 					"proxyConfiguration": map[string]any{
-						"type": "object",
+						"type":                 "object",
+						"additionalProperties": false,
 						"properties": map[string]any{
 							"proxyUrls": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						},
@@ -423,19 +432,43 @@ func tools() []map[string]any {
 				},
 				"required": []string{"searchQueries"},
 			},
-		},
-		{
-			"name":        "extract_contacts_from_html",
-			"description": "Extract emails, phones, social links and optional contact page URLs from a raw HTML string.",
-			"inputSchema": map[string]any{
+			map[string]any{
 				"type": "object",
+				"properties": map[string]any{
+					"count":   map[string]any{"type": "integer"},
+					"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+				},
+				"required": []string{"count", "results"},
+			},
+			"Searching Google Maps...",
+			"Google Maps results ready",
+		),
+		toolDescriptor(
+			"extract_contacts_from_html",
+			"Extract Contacts From HTML",
+			"Use this when you already have raw HTML and need emails, phones, social links, or likely contact page URLs.",
+			toolAnnotations(true, false, true, false),
+			map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]any{
 					"html":    map[string]any{"type": "string"},
 					"baseUrl": map[string]any{"type": "string"},
 				},
 				"required": []string{"html"},
 			},
-		},
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"emails":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"phones":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"socialLinks":     map[string]any{"type": "object"},
+					"contactPageUrls": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+			},
+			"Extracting contacts...",
+			"Contacts extracted",
+		),
 	}
 	if exposeExperimentalTools() {
 		tools = append(tools,
@@ -544,15 +577,24 @@ func exposeExperimentalTools() bool {
 }
 
 func toolDescriptor(name, title, description string, annotations map[string]any, inputSchema map[string]any, outputSchema map[string]any, invoking, invoked string) map[string]any {
-	tool := map[string]any{
-		"name":        name,
-		"description": description,
-		"inputSchema": inputSchema,
+	securitySchemes := []map[string]any{{"type": "noauth"}}
+	return map[string]any{
+		"name":            name,
+		"title":           title,
+		"description":     description,
+		"inputSchema":     inputSchema,
+		"outputSchema":    outputSchema,
+		"annotations":     annotations,
+		"securitySchemes": securitySchemes,
+		"_meta": map[string]any{
+			"securitySchemes": securitySchemes,
+			"ui": map[string]any{
+				"visibility": []string{"model", "app"},
+			},
+			"openai/toolInvocation/invoking": invoking,
+			"openai/toolInvocation/invoked":  invoked,
+		},
 	}
-	if len(annotations) > 0 {
-		tool["annotations"] = annotations
-	}
-	return tool
 }
 
 func toolAnnotations(readOnly, destructive, idempotent, openWorld bool) map[string]any {
@@ -588,7 +630,8 @@ func datasetPlaceFilterSchema() map[string]any {
 func toolJSON(id *json.RawMessage, value any) response {
 	payload, _ := json.MarshalIndent(value, "", "  ")
 	return response{JSONRPC: "2.0", ID: id, Result: map[string]any{
-		"content": []map[string]string{{"type": "text", "text": string(payload)}},
+		"structuredContent": value,
+		"content":           []map[string]string{{"type": "text", "text": string(payload)}},
 	}}
 }
 

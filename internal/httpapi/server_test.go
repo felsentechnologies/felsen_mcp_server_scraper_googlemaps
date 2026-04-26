@@ -113,7 +113,7 @@ func TestGatewayAllowsMCPDiscoveryWithTrailingSlash(t *testing.T) {
 	}
 }
 
-func TestGatewayProtectsMCPToolCalls(t *testing.T) {
+func TestGatewayAllowsMCPToolCallsByDefault(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
 	t.Setenv("MCP_BEARER_TOKEN", "")
 
@@ -123,8 +123,8 @@ func TestGatewayProtectsMCPToolCalls(t *testing.T) {
 
 	New(nil, nil).Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
 
