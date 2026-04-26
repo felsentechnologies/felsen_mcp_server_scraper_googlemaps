@@ -83,11 +83,26 @@ func TestGatewayProtectsScrape(t *testing.T) {
 	}
 }
 
-func TestGatewayProtectsMCP(t *testing.T) {
+func TestGatewayAllowsMCPDiscoveryWithoutToken(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
 	t.Setenv("MCP_BEARER_TOKEN", "")
 
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	New(nil, nil).Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestGatewayProtectsMCPToolCalls(t *testing.T) {
+	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
+	t.Setenv("MCP_BEARER_TOKEN", "")
+
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html></html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 

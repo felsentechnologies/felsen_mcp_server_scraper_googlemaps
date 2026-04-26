@@ -130,6 +130,10 @@ func withSecurityGateway(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if r.URL.Path == "/mcp" {
+			next.ServeHTTP(w, r)
+			return
+		}
 
 		token := httpauth.ServerBearerToken()
 		if token == "" {

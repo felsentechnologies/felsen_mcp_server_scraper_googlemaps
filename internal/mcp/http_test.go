@@ -72,7 +72,7 @@ func TestHTTPResponseOnlyReturnsAccepted(t *testing.T) {
 func TestHTTPToolsList(t *testing.T) {
 	server := New(nil, nil, nil, nil)
 	body := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
-	req := newAuthorizedRequest(t, http.MethodPost, "/mcp", body)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
 	server.HTTPHandler().ServeHTTP(rec, req)
@@ -88,6 +88,25 @@ func TestHTTPToolsList(t *testing.T) {
 	}
 }
 
+func TestHTTPToolsListDoesNotRequireBearerToken(t *testing.T) {
+	t.Setenv("HTTP_BEARER_TOKEN", "")
+	t.Setenv("MCP_BEARER_TOKEN", "")
+
+	server := New(nil, nil, nil, nil)
+	body := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("list_dataset_places")) {
+		t.Fatalf("response does not list dataset tools: %s", rec.Body.String())
+	}
+}
+
 func TestHTTPGetReturnsMethodNotAllowed(t *testing.T) {
 	server := New(nil, nil, nil, nil)
 	req := newAuthorizedRequest(t, http.MethodGet, "/mcp", nil)
@@ -100,11 +119,11 @@ func TestHTTPGetReturnsMethodNotAllowed(t *testing.T) {
 	}
 }
 
-func TestHTTPBearerTokenRequired(t *testing.T) {
+func TestHTTPToolCallBearerTokenRequired(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "")
 	t.Setenv("MCP_BEARER_TOKEN", "secret-token")
 	server := New(nil, nil, nil, nil)
-	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html></html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -122,7 +141,7 @@ func TestHTTPBearerTokenInvalid(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "")
 	t.Setenv("MCP_BEARER_TOKEN", "secret-token")
 	server := New(nil, nil, nil, nil)
-	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html></html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer wrong-token")
 	rec := httptest.NewRecorder()
@@ -138,7 +157,7 @@ func TestHTTPBearerTokenValid(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "")
 	t.Setenv("MCP_BEARER_TOKEN", "secret-token")
 	server := New(nil, nil, nil, nil)
-	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html>Contact contact@example.com</html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer secret-token")
 	rec := httptest.NewRecorder()
@@ -155,7 +174,7 @@ func TestHTTPBearerTokenFailsClosedWhenEnvEmpty(t *testing.T) {
 	t.Setenv("MCP_BEARER_TOKEN", "")
 
 	server := New(nil, nil, nil, nil)
-	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html></html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 

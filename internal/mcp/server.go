@@ -73,16 +73,6 @@ func (s *Server) Serve(ctx context.Context) error {
 
 func (s *Server) HTTPHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := httpauth.ServerBearerToken()
-		if token == "" {
-			writeJSONRPC(w, http.StatusServiceUnavailable, errorResponse(nil, -32001, "server authentication is not configured"))
-			return
-		}
-		if !httpauth.ValidBearerAuth(r.Header.Get("Authorization"), token) {
-			w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
-			writeJSONRPC(w, http.StatusUnauthorized, errorResponse(nil, -32001, "unauthorized"))
-			return
-		}
 		if _, ok := httpauth.AllowedCORSOrigin(r.Header.Get("Origin"), r.Host); !ok {
 			writeJSONRPC(w, http.StatusForbidden, errorResponse(nil, -32000, "forbidden origin"))
 			return
@@ -134,6 +124,9 @@ func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
+	if requiresBearerAuth(req.Method) && !writeUnauthorizedMCP(w, r) {
+		return
+	}
 	resp, ok := s.handle(r.Context(), req)
 	if !ok {
 		w.WriteHeader(http.StatusAccepted)
@@ -155,6 +148,9 @@ func (s *Server) handleHTTPBatch(w http.ResponseWriter, r *http.Request, body []
 
 	responses := make([]response, 0, len(reqs))
 	for _, req := range reqs {
+		if requiresBearerAuth(req.Method) && !writeUnauthorizedMCP(w, r) {
+			return
+		}
 		if req.Method == "" {
 			continue
 		}
@@ -168,6 +164,24 @@ func (s *Server) handleHTTPBatch(w http.ResponseWriter, r *http.Request, body []
 		return
 	}
 	writeJSONRPC(w, http.StatusOK, responses)
+}
+
+func requiresBearerAuth(method string) bool {
+	return method == "tools/call"
+}
+
+func writeUnauthorizedMCP(w http.ResponseWriter, r *http.Request) bool {
+	token := httpauth.ServerBearerToken()
+	if token == "" {
+		writeJSONRPC(w, http.StatusServiceUnavailable, errorResponse(nil, -32001, "server authentication is not configured"))
+		return false
+	}
+	if !httpauth.ValidBearerAuth(r.Header.Get("Authorization"), token) {
+		w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
+		writeJSONRPC(w, http.StatusUnauthorized, errorResponse(nil, -32001, "unauthorized"))
+		return false
+	}
+	return true
 }
 
 func (s *Server) handle(ctx context.Context, req request) (response, bool) {
