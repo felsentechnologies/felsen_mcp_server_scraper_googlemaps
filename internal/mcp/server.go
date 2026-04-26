@@ -99,19 +99,28 @@ func (s *Server) HTTPHandler() http.Handler {
 }
 
 func validMCPMethodAuth(method string, r *http.Request) bool {
-	if method != "tools/call" {
+	if method != "tools/call" || !requireMCPToolAuth() {
 		return true
 	}
 	token := httpauth.ServerBearerToken()
 	if token == "" {
-		return true
+		return false
 	}
 	return httpauth.ValidRequestAuth(r.Header, token)
 }
 
 func writeUnauthorizedMCP(w http.ResponseWriter) {
+	if httpauth.ServerBearerToken() == "" {
+		writeJSONRPC(w, http.StatusServiceUnavailable, errorResponse(nil, -32001, "server authentication is not configured"))
+		return
+	}
 	w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
 	writeJSONRPC(w, http.StatusUnauthorized, errorResponse(nil, -32001, "unauthorized"))
+}
+
+func requireMCPToolAuth() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("MCP_REQUIRE_TOOL_AUTH")))
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func (s *Server) handleHTTPPost(w http.ResponseWriter, r *http.Request) {
@@ -434,6 +443,7 @@ func tools() []map[string]any {
 				},
 				"required": []string{"searchQueries"},
 			},
+			scrapeGoogleMapsOutputSchema(),
 		),
 		toolDescriptor(
 			"extract_contacts_from_html",
@@ -449,6 +459,7 @@ func tools() []map[string]any {
 				},
 				"required": []string{"html"},
 			},
+			extractContactsOutputSchema(),
 		),
 	}
 	if exposeExperimentalTools() {
@@ -459,6 +470,7 @@ func tools() []map[string]any {
 				"Use this when you need to browse persisted dataset places with filters for query, category, rating, reviews, and actions.",
 				toolAnnotations(true, false, true, false),
 				datasetPlaceFilterSchema(),
+				datasetPlaceListOutputSchema(),
 			),
 			toolDescriptor(
 				"list_pending_action_places",
@@ -466,6 +478,7 @@ func tools() []map[string]any {
 				"Use this when you need persisted places that still have no actions or are missing a specific action type.",
 				toolAnnotations(true, false, true, false),
 				datasetPlaceFilterSchema(),
+				datasetPlaceListOutputSchema(),
 			),
 			toolDescriptor(
 				"get_dataset_place",
@@ -480,6 +493,7 @@ func tools() []map[string]any {
 						"placeKey": map[string]any{"type": "string"},
 					},
 				},
+				objectOutputSchema(),
 			),
 			toolDescriptor(
 				"update_place_actions",
@@ -499,6 +513,7 @@ func tools() []map[string]any {
 					},
 					"required": []string{"actions"},
 				},
+				objectOutputSchema(),
 			),
 			toolDescriptor(
 				"append_place_action",
@@ -515,6 +530,7 @@ func tools() []map[string]any {
 					},
 					"required": []string{"action"},
 				},
+				objectOutputSchema(),
 			),
 		)
 	}
@@ -526,17 +542,97 @@ func exposeExperimentalTools() bool {
 	return value == "1" || value == "true" || value == "yes"
 }
 
-func toolDescriptor(name, title, description string, annotations map[string]any, inputSchema map[string]any) map[string]any {
+func toolDescriptor(name, title, description string, annotations map[string]any, inputSchema map[string]any, outputSchema map[string]any) map[string]any {
+	securitySchemes := toolSecuritySchemes()
 	tool := map[string]any{
-		"name":        name,
-		"title":       title,
-		"description": description,
-		"inputSchema": inputSchema,
+		"name":            name,
+		"title":           title,
+		"description":     description,
+		"inputSchema":     inputSchema,
+		"outputSchema":    outputSchema,
+		"securitySchemes": securitySchemes,
+		"_meta": map[string]any{
+			"securitySchemes": securitySchemes,
+			"ui": map[string]any{
+				"visibility": []string{"model", "app"},
+			},
+			"openai/visibility": "public",
+		},
 	}
 	if len(annotations) > 0 {
 		tool["annotations"] = annotations
 	}
 	return tool
+}
+
+func toolSecuritySchemes() []map[string]any {
+	return []map[string]any{{"type": "noauth"}}
+}
+
+func scrapeGoogleMapsOutputSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"count": map[string]any{
+				"type":        "integer",
+				"description": "Number of places returned.",
+			},
+			"results": map[string]any{
+				"type":        "array",
+				"description": "Google Maps places enriched with contact data.",
+				"items":       map[string]any{"type": "object"},
+			},
+		},
+		"required": []string{"count", "results"},
+	}
+}
+
+func extractContactsOutputSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"emails": map[string]any{
+				"type":        "array",
+				"description": "Email addresses found in the HTML.",
+				"items":       map[string]any{"type": "string"},
+			},
+			"phones": map[string]any{
+				"type":        "array",
+				"description": "Phone numbers found in the HTML.",
+				"items":       map[string]any{"type": "string"},
+			},
+			"socialLinks": map[string]any{
+				"type":        "object",
+				"description": "Social media URLs grouped by network.",
+			},
+			"contactPageUrls": map[string]any{
+				"type":        "array",
+				"description": "Likely contact page URLs when baseUrl is provided.",
+				"items":       map[string]any{"type": "string"},
+			},
+		},
+		"required": []string{"emails", "phones", "socialLinks"},
+	}
+}
+
+func datasetPlaceListOutputSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"total":   map[string]any{"type": "integer"},
+			"limit":   map[string]any{"type": "integer"},
+			"offset":  map[string]any{"type": "integer"},
+			"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+		},
+		"required": []string{"total", "limit", "offset", "results"},
+	}
+}
+
+func objectOutputSchema() map[string]any {
+	return map[string]any{"type": "object"}
 }
 
 func toolAnnotations(readOnly, destructive, idempotent, openWorld bool) map[string]any {
@@ -572,7 +668,8 @@ func datasetPlaceFilterSchema() map[string]any {
 func toolJSON(id *json.RawMessage, value any) response {
 	payload, _ := json.MarshalIndent(value, "", "  ")
 	return response{JSONRPC: "2.0", ID: id, Result: map[string]any{
-		"content": []map[string]string{{"type": "text", "text": string(payload)}},
+		"structuredContent": value,
+		"content":           []map[string]string{{"type": "text", "text": string(payload)}},
 	}}
 }
 

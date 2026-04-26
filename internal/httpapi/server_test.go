@@ -116,6 +116,7 @@ func TestGatewayAllowsMCPDiscoveryWithTrailingSlash(t *testing.T) {
 func TestGatewayProtectsMCPToolCallsWithoutToken(t *testing.T) {
 	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
 	t.Setenv("MCP_BEARER_TOKEN", "")
+	t.Setenv("MCP_REQUIRE_TOOL_AUTH", "true")
 
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"extract_contacts_from_html","arguments":{"html":"<html></html>"}}}`)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
