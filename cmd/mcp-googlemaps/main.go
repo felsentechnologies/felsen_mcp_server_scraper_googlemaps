@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"mcp_server_scraper_googlemaps/internal/dataset"
 	"mcp_server_scraper_googlemaps/internal/httpapi"
 	"mcp_server_scraper_googlemaps/internal/mcp"
 	"mcp_server_scraper_googlemaps/internal/scraper"
@@ -22,7 +23,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	s := scraper.New(logger)
+	store, err := dataset.OpenFromEnv(ctx, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	defer func() {
+		if err := store.Close(); err != nil {
+			logger.Printf("close dataset database: %v", err)
+		}
+	}()
+
+	s := scraper.NewWithDataset(logger, store)
 	if *httpAddr != "" {
 		server := httpapi.New(s, logger)
 		if err := server.ListenAndServe(ctx, *httpAddr); err != nil && err != http.ErrServerClosed {

@@ -16,4 +16,11 @@ services:
       HTTP_BEARER_TOKEN: ${HTTP_BEARER_TOKEN:-}
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+      DATABASE_URL: ${DATABASE_URL:-}
       TZ: ${TZ:-America/Sao_Paulo}
+    healthcheck:
+      test: ["CMD-SHELL", "TOKEN=\"$${HTTP_BEARER_TOKEN:-$${MCP_BEARER_TOKEN:-}}\"; test -n \"$$TOKEN\" && curl -fsS -H \"Authorization: Bearer $$TOKEN\" http://localhost:3000/health >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

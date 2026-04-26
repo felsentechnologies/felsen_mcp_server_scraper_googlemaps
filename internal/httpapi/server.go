@@ -2,20 +2,20 @@ package httpapi
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log"
-	"net"
 	"net/http"
-	"net/url"
-	"os"
 	"strings"
+	"time"
 
+	"mcp_server_scraper_googlemaps/internal/httpauth"
 	"mcp_server_scraper_googlemaps/internal/mcp"
 	"mcp_server_scraper_googlemaps/internal/models"
 	"mcp_server_scraper_googlemaps/internal/scraper"
 )
+
+const maxScrapeBodyBytes = 1 << 20
 
 type Server struct {
 	scraper *scraper.Scraper
@@ -38,7 +38,13 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
-	server := &http.Server{Addr: addr, Handler: s.Handler()}
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           s.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 	go func() {
 		<-ctx.Done()
 		_ = server.Shutdown(context.Background())
@@ -58,12 +64,22 @@ func (s *Server) scrape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input models.Input
+	r.Body = http.MaxBytesReader(w, r.Body, maxScrapeBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
 	if len(input.SearchQueries) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "searchQueries is required and must not be empty"})
+		return
+	}
+	if s.scraper == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "scraper is not configured"})
 		return
 	}
 
@@ -89,7 +105,7 @@ func (s *Server) scrape(w http.ResponseWriter, r *http.Request) {
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
-		allowedOrigin, ok := allowedCORSOrigin(origin, r.Host)
+		allowedOrigin, ok := httpauth.AllowedCORSOrigin(origin, r.Host)
 		if origin != "" && !ok {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden origin"})
 			return
@@ -115,7 +131,7 @@ func withSecurityGateway(next http.Handler) http.Handler {
 			return
 		}
 
-		token := serverBearerToken()
+		token := httpauth.ServerBearerToken()
 		if token == "" {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"error": "server authentication is not configured",
@@ -123,80 +139,14 @@ func withSecurityGateway(next http.Handler) http.Handler {
 			return
 		}
 
-		if !validBearerAuth(r.Header.Get("Authorization"), token) {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="mcp-googlemaps"`)
+		if !httpauth.ValidBearerAuth(r.Header.Get("Authorization"), token) {
+			w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
 
 		next.ServeHTTP(w, r)
 	})
-}
-
-func serverBearerToken() string {
-	if value := strings.TrimSpace(os.Getenv("HTTP_BEARER_TOKEN")); value != "" {
-		return value
-	}
-	return strings.TrimSpace(os.Getenv("MCP_BEARER_TOKEN"))
-}
-
-func validBearerAuth(headerValue, expectedToken string) bool {
-	headerValue = strings.TrimSpace(headerValue)
-	if headerValue == "" || expectedToken == "" {
-		return false
-	}
-
-	scheme, token, ok := strings.Cut(headerValue, " ")
-	if !ok || !strings.EqualFold(scheme, "Bearer") {
-		return false
-	}
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return false
-	}
-
-	return subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) == 1
-}
-
-func allowedCORSOrigin(origin, host string) (string, bool) {
-	if origin == "" {
-		return "", true
-	}
-
-	for _, allowed := range strings.Split(os.Getenv("MCP_ALLOWED_ORIGINS"), ",") {
-		allowed = strings.TrimSpace(allowed)
-		if allowed == "*" {
-			return "*", true
-		}
-		if strings.EqualFold(allowed, origin) {
-			return origin, true
-		}
-	}
-
-	originHost := origin
-	if parsed, err := url.Parse(origin); err == nil && parsed.Host != "" {
-		originHost = parsed.Host
-	}
-	originHost = hostnameOnly(originHost)
-	host = hostnameOnly(host)
-
-	if strings.EqualFold(originHost, host) || isLocalhost(originHost) {
-		return origin, true
-	}
-	return "", false
-}
-
-func hostnameOnly(host string) string {
-	name, _, err := net.SplitHostPort(host)
-	if err == nil {
-		return name
-	}
-	return strings.Trim(host, "[]")
-}
-
-func isLocalhost(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

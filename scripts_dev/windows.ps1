@@ -2,7 +2,8 @@ param(
     [string]$ImageName = "mcp-googlemaps",
     [int]$HostPort = 3000,
     [string]$BearerToken = "",
-    [string]$AllowedOrigins = ""
+    [string]$AllowedOrigins = "",
+    [string]$DatabaseUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,6 +13,10 @@ $TokenDir = Join-Path $env:LOCALAPPDATA "FelsenTechnologies\mcp-googlemaps"
 $TokenFile = Join-Path $TokenDir "bearer-token.txt"
 $GeneratedBearerToken = $false
 $LastComposeSucceeded = $false
+
+if ([string]::IsNullOrWhiteSpace($DatabaseUrl) -and -not [string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
+    $DatabaseUrl = $env:DATABASE_URL
+}
 
 function Write-Title {
     param([string]$Text)
@@ -92,6 +97,36 @@ function Write-BearerTokenInfo {
     Write-Host "Use este valor na OpenAI como authorization/bearer token." -ForegroundColor Yellow
 }
 
+function Initialize-DatabaseUrl {
+    param([switch]$Force)
+
+    if (-not $Force -and -not [string]::IsNullOrWhiteSpace($script:DatabaseUrl)) {
+        return
+    }
+
+    Write-Host ""
+    Write-Host "DATABASE_URL para persistir as extracoes em Postgres." -ForegroundColor Yellow
+    Write-Host "Exemplo: postgres://postgres:postgres@localhost:5432/dataset?sslmode=disable" -ForegroundColor DarkGray
+    Write-Host "Pressione Enter sem preencher para subir sem database." -ForegroundColor Yellow
+    $value = Read-Host "DATABASE_URL"
+    if (-not [string]::IsNullOrWhiteSpace($value)) {
+        $script:DatabaseUrl = $value.Trim()
+        return
+    }
+
+    $script:DatabaseUrl = ""
+}
+
+function Write-DatabaseUrlInfo {
+    Write-Host ""
+    if ([string]::IsNullOrWhiteSpace($script:DatabaseUrl)) {
+        Write-Host "DATABASE_URL nao configurado. A stack subiu sem persistencia em database." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host "DATABASE_URL configurado. O servidor ira migrar e usar a database dataset ao iniciar." -ForegroundColor Green
+}
+
 function Invoke-Compose {
     param([string[]]$ArgsList)
     $script:LastComposeSucceeded = $false
@@ -103,6 +138,7 @@ function Invoke-Compose {
         $env:HTTP_BEARER_TOKEN = $BearerToken
         $env:MCP_BEARER_TOKEN = $BearerToken
         $env:MCP_ALLOWED_ORIGINS = $AllowedOrigins
+        $env:DATABASE_URL = $DatabaseUrl
         & docker compose -f $ComposeFile @ArgsList
         if ($LASTEXITCODE -ne 0) {
             throw "docker compose falhou com codigo de saida $LASTEXITCODE"
@@ -122,9 +158,11 @@ function Invoke-StackBuild {
 function Start-Stack {
     Write-Title "Subir stack"
     Initialize-BearerToken
+    Initialize-DatabaseUrl
     Invoke-Compose @("up", "-d", "--build")
     if ($script:LastComposeSucceeded) {
         Write-BearerTokenInfo
+        Write-DatabaseUrlInfo
     }
 }
 
@@ -141,9 +179,11 @@ function Restart-Stack {
 function RecreateStack {
     Write-Title "Recriar stack"
     Initialize-BearerToken
+    Initialize-DatabaseUrl -Force
     Invoke-Compose @("up", "-d", "--build", "--force-recreate")
     if ($script:LastComposeSucceeded) {
         Write-BearerTokenInfo
+        Write-DatabaseUrlInfo
     }
 }
 
@@ -239,6 +279,7 @@ function Show-Menu {
     Write-Host "Imagem:        $ImageName`:latest"
     Write-Host "Porta local:   $HostPort"
     Write-Host "Bearer token:  $(if ($BearerToken) { 'configurado' } else { 'sera gerado ao subir a stack' })"
+    Write-Host "Database URL:  $(if ([string]::IsNullOrWhiteSpace($DatabaseUrl)) { 'nao configurado' } else { 'configurado' })"
     Write-Host "Token salvo:   $TokenFile"
     Write-Host ""
     Write-Host "1. Buildar stack"

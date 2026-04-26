@@ -22,6 +22,7 @@ Servidor MCP en Go para buscar empresas en Google Maps y enriquecer los resultad
 - Modo HTTP opcional con `POST /scrape`, `GET /health` y endpoint MCP remoto `POST /mcp`.
 - Busqueda en Google Maps con Chrome headless.
 - Extraccion de datos del lugar: nombre, direccion, telefono, sitio web, calificacion, numero de resenas, categoria, imagen y URL de Maps.
+- Extraccion opcional del contenido de resenas: autor, calificacion, fecha relativa y texto.
 - Enriquecimiento de contactos en sitios web: emails, telefonos y redes sociales.
 - Busqueda limitada en paginas internas de contacto/sobre nosotros.
 - Deduplicacion de emails y telefonos.
@@ -123,6 +124,7 @@ Variables aceptadas por compose:
 - `HTTP_BEARER_TOKEN`: bearer token global requerido por todas las rutas HTTP.
 - `MCP_BEARER_TOKEN`: fallback para `HTTP_BEARER_TOKEN`, mantenido por compatibilidad.
 - `MCP_ALLOWED_ORIGINS`: origenes permitidos para llamadas desde navegador.
+- `DATABASE_URL`: string de conexion PostgreSQL opcional para persistencia del dataset.
 - `TZ`: zona horaria del container. Valor por defecto: `America/Sao_Paulo`.
 
 Ejemplo con bearer token:
@@ -198,7 +200,7 @@ Respuesta:
 
 ### POST /scrape
 
-Busca empresas en Google Maps y, opcionalmente, enriquece los resultados con emails, telefonos y redes sociales encontrados en los sitios web oficiales.
+Busca empresas en Google Maps y, opcionalmente, enriquece los resultados con emails, telefonos, redes sociales y resenas.
 
 ```bash
 curl -X POST http://localhost:3000/scrape \
@@ -209,6 +211,8 @@ curl -X POST http://localhost:3000/scrape \
     "maxPlacesPerQuery": 20,
     "scrapeEmails": true,
     "scrapePhones": true,
+    "scrapeReviews": true,
+    "maxReviewsPerPlace": 10,
     "language": "es-ES"
   }'
 ```
@@ -219,6 +223,8 @@ Campos del cuerpo:
 - `maxPlacesPerQuery`: maximo de empresas validas por busqueda. Valor por defecto: `20`; limite maximo: `500`.
 - `scrapeEmails`: busca emails en los sitios web oficiales. Valor por defecto: `true`.
 - `scrapePhones`: busca telefonos en los sitios web oficiales. Valor por defecto: `true`.
+- `scrapeReviews`: extrae el contenido de resenas en Google Maps. Valor por defecto: `false`.
+- `maxReviewsPerPlace`: maximo de resenas por empresa cuando `scrapeReviews` esta activo. Valor por defecto: `10`; limite maximo: `100`.
 - `language`: idioma usado en Google Maps. Valor por defecto: `pt-BR`.
 - `proxyConfiguration.proxyUrls`: lista opcional de proxies. Chrome usa el primer proxy.
 
@@ -247,7 +253,15 @@ Ejemplo de respuesta:
         "linkedin": null,
         "twitter": null,
         "youtube": null
-      }
+      },
+      "reviews": [
+        {
+          "author": "Cliente Ejemplo",
+          "rating": 5,
+          "publishedAt": "hace 2 semanas",
+          "text": "Excelente atencion."
+        }
+      ]
     }
   ]
 }
@@ -258,6 +272,7 @@ Posibles errores:
 - `400`: JSON invalido o `searchQueries` vacio.
 - `401`: bearer token ausente o invalido.
 - `405`: metodo HTTP no permitido.
+- `413`: cuerpo de la solicitud demasiado grande. El limite de `/scrape` es `1 MiB`.
 - `503`: bearer token no configurado en el servidor.
 - `499`: el cliente cancelo la solicitud antes de finalizar.
 - `504`: tiempo limite alcanzado durante el scraping.
@@ -330,6 +345,8 @@ curl -X POST http://localhost:3000/mcp \
         "maxPlacesPerQuery": 20,
         "scrapeEmails": true,
         "scrapePhones": true,
+        "scrapeReviews": true,
+        "maxReviewsPerPlace": 10,
         "language": "es-ES"
       }
     }
@@ -408,6 +425,8 @@ Si `HTTP_BEARER_TOKEN` y `MCP_BEARER_TOKEN` no estan definidos, el servidor fall
 
 `MCP_BEARER_TOKEN` todavia se acepta como fallback de compatibilidad, pero `HTTP_BEARER_TOKEN` es el nombre recomendado para nuevas instalaciones.
 
+El handler MCP HTTP remoto tambien falla cerrado cuando ningun bearer token esta configurado. Esto aplica incluso cuando `/mcp` se monta directamente fuera del gateway HTTP incluido.
+
 El servidor valida el header `Origin` cuando esta presente. Por defecto, se aceptan llamadas sin header `Origin`, mismo origen y localhost. Para liberar origenes de navegador especificos, configura:
 
 ```bash
@@ -421,6 +440,17 @@ MCP_ALLOWED_ORIGINS=*
 ```
 
 En produccion, prefiere listar origenes explicitos en vez de usar `*`.
+
+#### Status del Dataset
+
+Cuando `DATABASE_URL` esta configurado, cada extraccion se persiste con status de ciclo de vida:
+
+- `running`: la extraccion inicio y todavia puede estar grabando lugares.
+- `finished`: la extraccion termino correctamente.
+- `failed`: la extraccion termino con error y puede incluir resultados parciales.
+- `canceled`: el cliente cancelo la solicitud y puede haber resultados parciales.
+
+Los mismos campos `status`, `finishedAt` y `error` se escriben en los registros JSONL de extraccion cuando se usa un store de dataset en archivo.
 
 ## Llamadas MCP
 
@@ -475,6 +505,8 @@ Ejecuta la busqueda en Google Maps.
       "maxPlacesPerQuery": 20,
       "scrapeEmails": true,
       "scrapePhones": true,
+      "scrapeReviews": true,
+      "maxReviewsPerPlace": 10,
       "language": "es-ES"
     }
   }

@@ -17,22 +17,31 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
+	"mcp_server_scraper_googlemaps/internal/dataset"
 	"mcp_server_scraper_googlemaps/internal/extractors"
 	"mcp_server_scraper_googlemaps/internal/models"
 )
 
 type Scraper struct {
-	logger *log.Logger
+	logger  *log.Logger
+	dataset *dataset.Store
 }
 
 func New(logger *log.Logger) *Scraper {
+	return NewWithDataset(logger, dataset.NewNoop(logger))
+}
+
+func NewWithDataset(logger *log.Logger, store *dataset.Store) *Scraper {
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Scraper{logger: logger}
+	if store == nil {
+		store = dataset.NewNoop(logger)
+	}
+	return &Scraper{logger: logger, dataset: store}
 }
 
-func (s *Scraper) ScrapeGoogleMaps(ctx context.Context, input models.Input) ([]models.PlaceData, error) {
+func (s *Scraper) ScrapeGoogleMaps(ctx context.Context, input models.Input) (places []models.PlaceData, err error) {
 	input = input.WithDefaults()
 	if err := validateInput(input); err != nil {
 		return nil, err
@@ -61,18 +70,51 @@ func (s *Scraper) ScrapeGoogleMaps(ctx context.Context, input models.Input) ([]m
 		return nil, fmt.Errorf("start browser: %w", err)
 	}
 
-	placesByURL := make(map[string]models.PlaceData)
+	session, err := s.dataset.StartExtraction(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("start dataset extraction: %w", err)
+	}
+	defer func() {
+		status := dataset.ExtractionStatusFinished
+		errorMessage := ""
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				status = dataset.ExtractionStatusCanceled
+			} else {
+				status = dataset.ExtractionStatusFailed
+				errorMessage = err.Error()
+			}
+		}
+
+		finishCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if finishErr := session.FinishWithStatus(finishCtx, status, errorMessage); finishErr != nil {
+			if err == nil {
+				err = fmt.Errorf("finish dataset extraction: %w", finishErr)
+				return
+			}
+			s.logger.Printf("finish dataset extraction after %s: %v", status, finishErr)
+		}
+	}()
+
+	places = make([]models.PlaceData, 0, len(input.SearchQueries)*input.MaxPlacesPerQuery)
+	seenURLs := make(map[string]struct{})
+	var enrichmentClient *http.Client
+	if *input.ScrapeEmails || *input.ScrapePhones {
+		enrichmentClient = &http.Client{Timeout: 20 * time.Second}
+	}
+
 	for _, query := range input.SearchQueries {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return places, ctx.Err()
 		default:
 		}
 
 		s.logger.Printf("searching Google Maps: %q", query)
 		placeURLs, err := s.collectPlaceURLs(browserCtx, query, input.Language, candidateLimit(input.MaxPlacesPerQuery))
 		if err != nil {
-			return nil, fmt.Errorf("collect place urls for %q: %w", query, err)
+			return places, fmt.Errorf("collect place urls for %q: %w", query, err)
 		}
 		s.logger.Printf("found %d candidate place url(s) for %q", len(placeURLs), query)
 
@@ -83,37 +125,40 @@ func (s *Scraper) ScrapeGoogleMaps(ctx context.Context, input models.Input) ([]m
 			}
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return places, ctx.Err()
 			default:
 			}
-			if _, exists := placesByURL[placeURL]; exists {
+			urlKey := placeURLKey(placeURL)
+			if _, exists := seenURLs[urlKey]; exists {
 				continue
 			}
-			place, err := s.scrapePlace(browserCtx, query, placeURL)
+			seenURLs[urlKey] = struct{}{}
+			place, err := s.scrapePlace(browserCtx, query, placeURL, *input.ScrapeReviews, input.MaxReviewsPerPlace)
 			if err != nil {
 				if isContextError(err) {
-					return nil, err
+					return places, err
 				}
 				s.logger.Printf("skipping %s: %v", placeURL, err)
 				continue
 			}
-			placesByURL[placeURL] = place
+
+			if enrichmentClient != nil {
+				s.enrichPlaceFromWebsite(ctx, enrichmentClient, &place, *input.ScrapeEmails, *input.ScrapePhones)
+			}
+			place.Emails = unique(place.Emails)
+			place.Phones = unique(place.Phones)
+
+			saved, err := session.SavePlace(ctx, place)
+			if err != nil {
+				return places, fmt.Errorf("save dataset place %q: %w", place.Name, err)
+			}
+			if !saved {
+				s.logger.Printf("skipping duplicate place %q (%s)", place.Name, place.GoogleMapsURL)
+				continue
+			}
+			places = append(places, place)
 			queryPlaces++
 		}
-	}
-
-	places := make([]models.PlaceData, 0, len(placesByURL))
-	for _, place := range placesByURL {
-		places = append(places, place)
-	}
-
-	if (*input.ScrapeEmails || *input.ScrapePhones) && len(places) > 0 {
-		s.enrichFromWebsites(ctx, places, *input.ScrapeEmails, *input.ScrapePhones)
-	}
-
-	for i := range places {
-		places[i].Emails = unique(places[i].Emails)
-		places[i].Phones = unique(places[i].Phones)
 	}
 
 	return places, nil
@@ -140,21 +185,26 @@ func (s *Scraper) collectPlaceURLs(ctx context.Context, query, language string, 
 	return urls, nil
 }
 
-func (s *Scraper) scrapePlace(ctx context.Context, query, placeURL string) (models.PlaceData, error) {
+func (s *Scraper) scrapePlace(ctx context.Context, query, placeURL string, scrapeReviews bool, maxReviews int) (models.PlaceData, error) {
 	tabCtx, cancelTab := chromedp.NewContext(ctx)
 	defer cancelTab()
-	timeoutCtx, cancelTimeout := context.WithTimeout(tabCtx, 75*time.Second)
+	timeoutCtx, cancelTimeout := context.WithTimeout(tabCtx, 90*time.Second)
 	defer cancelTimeout()
 
 	var data placePageData
-	err := chromedp.Run(timeoutCtx,
+	actions := []chromedp.Action{
 		chromedp.Navigate(placeURL),
-		chromedp.Sleep(1500*time.Millisecond),
+		chromedp.Sleep(1500 * time.Millisecond),
 		acceptConsent(),
 		chromedp.WaitReady(`body`, chromedp.ByQuery),
-		chromedp.Sleep(2*time.Second),
+		chromedp.Sleep(2 * time.Second),
 		chromedp.Evaluate(placeExtractionScript, &data),
-	)
+	}
+	if scrapeReviews && maxReviews > 0 {
+		actions = append(actions, collectPlaceReviews(maxReviews, &data.Reviews))
+	}
+
+	err := chromedp.Run(timeoutCtx, actions...)
 	if err != nil {
 		return models.PlaceData{}, err
 	}
@@ -177,6 +227,7 @@ func (s *Scraper) scrapePlace(ctx context.Context, query, placeURL string) (mode
 		Emails:        []string{},
 		Phones:        []string{},
 		SocialLinks:   models.EmptySocialLinks(),
+		Reviews:       data.Reviews,
 	}
 	if place.Phone != nil {
 		place.Phones = append(place.Phones, *place.Phone)
@@ -184,35 +235,29 @@ func (s *Scraper) scrapePlace(ctx context.Context, query, placeURL string) (mode
 	return place, nil
 }
 
-func (s *Scraper) enrichFromWebsites(ctx context.Context, places []models.PlaceData, scrapeEmails, scrapePhones bool) {
-	client := &http.Client{
-		Timeout: 20 * time.Second,
+func (s *Scraper) enrichPlaceFromWebsite(ctx context.Context, client *http.Client, place *models.PlaceData, scrapeEmails, scrapePhones bool) {
+	if place.Website == nil || *place.Website == "" {
+		return
 	}
+	mainURL := *place.Website
+	html, err := fetchHTML(ctx, client, mainURL)
+	if err != nil {
+		s.logger.Printf("website fetch failed for %s: %v", place.Name, err)
+		return
+	}
+	applyContacts(place, html, scrapeEmails, scrapePhones)
 
-	for i := range places {
-		if places[i].Website == nil || *places[i].Website == "" {
+	visited := map[string]struct{}{mainURL: {}}
+	for _, contactURL := range firstN(extractors.FindContactPageURLs(html, mainURL), 5) {
+		if _, ok := visited[contactURL]; ok {
 			continue
 		}
-		mainURL := *places[i].Website
-		html, err := fetchHTML(ctx, client, mainURL)
+		visited[contactURL] = struct{}{}
+		subHTML, err := fetchHTML(ctx, client, contactURL)
 		if err != nil {
-			s.logger.Printf("website fetch failed for %s: %v", places[i].Name, err)
 			continue
 		}
-		applyContacts(&places[i], html, scrapeEmails, scrapePhones)
-
-		visited := map[string]struct{}{mainURL: {}}
-		for _, contactURL := range firstN(extractors.FindContactPageURLs(html, mainURL), 5) {
-			if _, ok := visited[contactURL]; ok {
-				continue
-			}
-			visited[contactURL] = struct{}{}
-			subHTML, err := fetchHTML(ctx, client, contactURL)
-			if err != nil {
-				continue
-			}
-			applyContacts(&places[i], subHTML, scrapeEmails, scrapePhones)
-		}
+		applyContacts(place, subHTML, scrapeEmails, scrapePhones)
 	}
 }
 
@@ -259,14 +304,15 @@ func fetchHTML(ctx context.Context, client *http.Client, rawURL string) (string,
 }
 
 type placePageData struct {
-	Name         string  `json:"name"`
-	Address      string  `json:"address"`
-	Phone        string  `json:"phone"`
-	Website      string  `json:"website"`
-	Rating       float64 `json:"rating"`
-	ReviewsCount int     `json:"reviewsCount"`
-	Category     string  `json:"category"`
-	ImageURL     string  `json:"imageUrl"`
+	Name         string              `json:"name"`
+	Address      string              `json:"address"`
+	Phone        string              `json:"phone"`
+	Website      string              `json:"website"`
+	Rating       float64             `json:"rating"`
+	ReviewsCount int                 `json:"reviewsCount"`
+	Category     string              `json:"category"`
+	ImageURL     string              `json:"imageUrl"`
+	Reviews      []models.ReviewData `json:"reviews"`
 }
 
 func acceptConsent() chromedp.Action {
@@ -309,6 +355,80 @@ func collectMapsPlaceURLs(maxPlaces int, urls *[]string) chromedp.Action {
 		}
 		return Array.from(found).slice(0, %d);
 	})()`, maxPlaces, maxPlaces), urls, func(params *runtime.EvaluateParams) *runtime.EvaluateParams {
+		return params.WithAwaitPromise(true).WithReturnByValue(true)
+	})
+}
+
+func collectPlaceReviews(maxReviews int, reviews *[]models.ReviewData) chromedp.Action {
+	return chromedp.Evaluate(fmt.Sprintf(`(async () => {
+		const limit = %d;
+		const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+		const text = el => (el && el.textContent ? el.textContent.trim() : '');
+		const clickReviewButton = () => {
+			const candidates = Array.from(document.querySelectorAll('button, a')).filter(el => {
+				const label = el.getAttribute('aria-label') || '';
+				const value = (label + ' ' + text(el)).toLowerCase();
+				return /(avaliacoes|avaliacões|avaliações|reviews|resenas|reseñas|opiniones)/i.test(value)
+					&& !/(write|escrever|escreva|add|adicionar)/i.test(value);
+			});
+			const preferred = candidates.find(el => /review|avali|resen|opinion/i.test(el.getAttribute('jsaction') || '')) || candidates[0];
+			if (preferred) {
+				preferred.click();
+				return true;
+			}
+			return false;
+		};
+		const scrollContainer = () => {
+			const elements = Array.from(document.querySelectorAll('div, section, main'));
+			return elements
+				.filter(el => el.scrollHeight > el.clientHeight + 200)
+				.sort((a, b) => b.scrollHeight - a.scrollHeight)[0] || document.scrollingElement || document.body;
+		};
+		const expandReviews = () => {
+			for (const btn of Array.from(document.querySelectorAll('button'))) {
+				const value = (btn.getAttribute('aria-label') || btn.textContent || '').trim();
+				if (/^(mais|more|mas|más)$/i.test(value) || /mais texto|more text|mostrar mais|show more/i.test(value)) {
+					btn.click();
+				}
+			}
+		};
+		const parseRating = raw => {
+			const match = (raw || '').match(/([\d,.]+)/);
+			return match ? Number.parseFloat(match[1].replace(',', '.')) || 0 : 0;
+		};
+		const collect = () => {
+			const cards = Array.from(document.querySelectorAll('[data-review-id]'));
+			return cards.map(card => {
+				const ratingEl = card.querySelector('[aria-label*="estrela"], [aria-label*="star"], [aria-label*="estrellas"], [role="img"][aria-label]');
+				const author = text(card.querySelector('.d4r55')) || text(card.querySelector('[class*="fontHeadline"]')) || text(card.querySelector('button'));
+				const publishedAt = text(card.querySelector('.rsqaWe')) || text(card.querySelector('[class*="fontBodySmall"]'));
+				const body = text(card.querySelector('.wiI7pd')) || text(card.querySelector('[data-expandable-section]'));
+				const rating = ratingEl ? parseRating(ratingEl.getAttribute('aria-label') || '') : 0;
+				return { author, rating, publishedAt, text: body };
+			}).filter(review => review.author || review.text);
+		};
+
+		clickReviewButton();
+		await sleep(1800);
+		let container = scrollContainer();
+		let found = [];
+		let previousCount = -1;
+		let stableCount = 0;
+
+		for (let i = 0; i < 80 && found.length < limit && stableCount < 8; i++) {
+			expandReviews();
+			found = collect();
+			if (found.length === previousCount) stableCount++;
+			else {
+				previousCount = found.length;
+				stableCount = 0;
+			}
+			container.scrollBy(0, 6000);
+			await sleep(900);
+			container = scrollContainer();
+		}
+		return found.slice(0, limit);
+	})()`, maxReviews), reviews, func(params *runtime.EvaluateParams) *runtime.EvaluateParams {
 		return params.WithAwaitPromise(true).WithReturnByValue(true)
 	})
 }
@@ -419,6 +539,24 @@ func firstN(values []string, n int) []string {
 	return values[:n]
 }
 
+func placeURLKey(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return strings.ToLower(rawURL)
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.ToLower(parsed.String())
+}
+
 func sanitizePlacePageData(data placePageData) placePageData {
 	data.Name = cleanText(data.Name)
 	data.Address = cleanText(data.Address)
@@ -426,7 +564,38 @@ func sanitizePlacePageData(data placePageData) placePageData {
 	data.Website = cleanText(data.Website)
 	data.Category = cleanText(data.Category)
 	data.ImageURL = cleanText(data.ImageURL)
+	data.Reviews = cleanReviews(data.Reviews)
 	return data
+}
+
+func cleanReviews(reviews []models.ReviewData) []models.ReviewData {
+	cleaned := make([]models.ReviewData, 0, len(reviews))
+	seen := make(map[string]struct{}, len(reviews))
+	for _, review := range reviews {
+		review.Author = cleanText(review.Author)
+		review.Text = cleanText(review.Text)
+		if review.PublishedAt != nil {
+			publishedAt := cleanText(*review.PublishedAt)
+			if publishedAt == "" {
+				review.PublishedAt = nil
+			} else {
+				review.PublishedAt = &publishedAt
+			}
+		}
+		if review.Rating != nil && *review.Rating == 0 {
+			review.Rating = nil
+		}
+		if review.Author == "" && review.Text == "" {
+			continue
+		}
+		key := review.Author + "\x00" + review.Text
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		cleaned = append(cleaned, review)
+	}
+	return cleaned
 }
 
 func cleanValues(values []string) []string {
@@ -505,6 +674,12 @@ func validateInput(input models.Input) error {
 	}
 	if input.MaxPlacesPerQuery > models.MaxPlacesPerQueryLimit {
 		return fmt.Errorf("maxPlacesPerQuery must be less than or equal to %d", models.MaxPlacesPerQueryLimit)
+	}
+	if input.MaxReviewsPerPlace < 0 {
+		return errors.New("maxReviewsPerPlace must be greater than or equal to zero")
+	}
+	if input.MaxReviewsPerPlace > models.MaxReviewsPerPlaceLimit {
+		return fmt.Errorf("maxReviewsPerPlace must be less than or equal to %d", models.MaxReviewsPerPlaceLimit)
 	}
 	return nil
 }

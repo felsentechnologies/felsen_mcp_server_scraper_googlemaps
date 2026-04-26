@@ -5,6 +5,7 @@ IMAGE_NAME="mcp-googlemaps"
 HOST_PORT="3000"
 BEARER_TOKEN=""
 ALLOWED_ORIGINS=""
+DATABASE_URL="${DATABASE_URL:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -24,8 +25,12 @@ while [[ $# -gt 0 ]]; do
       ALLOWED_ORIGINS="${2:-}"
       shift 2
       ;;
+    --database-url)
+      DATABASE_URL="${2:-}"
+      shift 2
+      ;;
     -h|--help)
-      echo "Usage: $0 [--image-name NAME] [--host-port PORT] [--bearer-token TOKEN] [--allowed-origins ORIGINS]"
+      echo "Usage: $0 [--image-name NAME] [--host-port PORT] [--bearer-token TOKEN] [--allowed-origins ORIGINS] [--database-url URL]"
       exit 0
       ;;
     *)
@@ -120,6 +125,16 @@ write_bearer_token_info() {
   printf "\nUse este valor na OpenAI como authorization/bearer token.\n"
 }
 
+write_database_url_info() {
+  printf "\n"
+  if [[ -z "${DATABASE_URL// }" ]]; then
+    echo "DATABASE_URL nao configurado. A stack subiu sem persistencia em database."
+    return
+  fi
+
+  echo "DATABASE_URL configurado. O servidor ira migrar e usar a database dataset ao iniciar."
+}
+
 invoke_compose() {
   LAST_COMPOSE_SUCCEEDED="false"
   test_docker || return 0
@@ -131,6 +146,7 @@ invoke_compose() {
     HTTP_BEARER_TOKEN="$BEARER_TOKEN" \
     MCP_BEARER_TOKEN="$BEARER_TOKEN" \
     MCP_ALLOWED_ORIGINS="$ALLOWED_ORIGINS" \
+    DATABASE_URL="$DATABASE_URL" \
     docker compose -f "$COMPOSE_FILE" "$@"
   ); then
     LAST_COMPOSE_SUCCEEDED="true"
@@ -150,6 +166,7 @@ start_stack() {
   invoke_compose up -d --build
   if [[ "$LAST_COMPOSE_SUCCEEDED" == "true" ]]; then
     write_bearer_token_info
+    write_database_url_info
   fi
 }
 
@@ -169,6 +186,7 @@ recreate_stack() {
   invoke_compose up -d --build --force-recreate
   if [[ "$LAST_COMPOSE_SUCCEEDED" == "true" ]]; then
     write_bearer_token_info
+    write_database_url_info
   fi
 }
 
@@ -249,6 +267,11 @@ show_menu() {
     echo "Bearer token:  configurado"
   else
     echo "Bearer token:  sera gerado ao subir a stack"
+  fi
+  if [[ -n "${DATABASE_URL// }" ]]; then
+    echo "Database URL:  configurado"
+  else
+    echo "Database URL:  nao configurado"
   fi
   echo "Token salvo:   $TOKEN_FILE"
   printf "\n"

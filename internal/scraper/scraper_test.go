@@ -24,6 +24,8 @@ func TestCleanPhoneRemovesIconsAndKeepsPhonePunctuation(t *testing.T) {
 }
 
 func TestSanitizePlacePageData(t *testing.T) {
+	publishedAt := "\ue0be 2 semanas atras "
+	rating := 5.0
 	data := sanitizePlacePageData(placePageData{
 		Name:     " Avenida Paulista \u200b",
 		Address:  "\ue0c8 Rua Emiliano Perneta, 680",
@@ -31,6 +33,11 @@ func TestSanitizePlacePageData(t *testing.T) {
 		Website:  " https://example.com ",
 		Category: "\ue0be Pizzaria",
 		ImageURL: " https://img.example.com/photo.jpg ",
+		Reviews: []models.ReviewData{
+			{Author: " Cliente \u200b", Rating: &rating, PublishedAt: &publishedAt, Text: " Otimo atendimento\n "},
+			{Author: " Cliente \u200b", Rating: &rating, PublishedAt: &publishedAt, Text: " Otimo atendimento\n "},
+			{Author: "", Text: ""},
+		},
 	})
 
 	if data.Name != "Avenida Paulista" {
@@ -50,6 +57,15 @@ func TestSanitizePlacePageData(t *testing.T) {
 	}
 	if data.ImageURL != "https://img.example.com/photo.jpg" {
 		t.Fatalf("ImageURL = %q", data.ImageURL)
+	}
+	if len(data.Reviews) != 1 {
+		t.Fatalf("len(Reviews) = %d, want 1: %#v", len(data.Reviews), data.Reviews)
+	}
+	if data.Reviews[0].Author != "Cliente" || data.Reviews[0].Text != "Otimo atendimento" {
+		t.Fatalf("Reviews[0] = %#v, want cleaned review", data.Reviews[0])
+	}
+	if data.Reviews[0].PublishedAt == nil || *data.Reviews[0].PublishedAt != "2 semanas atras" {
+		t.Fatalf("PublishedAt = %#v, want cleaned date", data.Reviews[0].PublishedAt)
 	}
 }
 
@@ -87,5 +103,18 @@ func TestValidateInputRejectsTooManyPlaces(t *testing.T) {
 	err := validateInput(input)
 	if err == nil || !strings.Contains(err.Error(), "maxPlacesPerQuery") {
 		t.Fatalf("validateInput() error = %v, want maxPlacesPerQuery limit error", err)
+	}
+}
+
+func TestValidateInputRejectsTooManyReviews(t *testing.T) {
+	input := models.Input{
+		SearchQueries:      []string{"pizzarias em Curitiba"},
+		MaxPlacesPerQuery:  1,
+		MaxReviewsPerPlace: models.MaxReviewsPerPlaceLimit + 1,
+	}
+
+	err := validateInput(input)
+	if err == nil || !strings.Contains(err.Error(), "maxReviewsPerPlace") {
+		t.Fatalf("validateInput() error = %v, want maxReviewsPerPlace limit error", err)
 	}
 }

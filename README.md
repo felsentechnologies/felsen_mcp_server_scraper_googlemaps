@@ -22,6 +22,7 @@ Go MCP server for searching businesses on Google Maps and enriching results with
 - Optional HTTP mode with `POST /scrape`, `GET /health`, and remote MCP endpoint `POST /mcp`.
 - Google Maps search with headless Chrome.
 - Place data extraction: name, address, phone, website, rating, number of reviews, category, image, and Maps URL.
+- Optional review content extraction: author, rating, relative date, and text.
 - Contact enrichment from websites: emails, phones, and social networks.
 - Limited crawling of internal contact/about pages.
 - Email and phone deduplication.
@@ -123,6 +124,7 @@ Variables accepted by compose:
 - `HTTP_BEARER_TOKEN`: global bearer token required by all HTTP routes.
 - `MCP_BEARER_TOKEN`: fallback for `HTTP_BEARER_TOKEN`, kept for compatibility.
 - `MCP_ALLOWED_ORIGINS`: origins allowed for browser calls.
+- `DATABASE_URL`: optional PostgreSQL connection string for dataset persistence.
 - `TZ`: container timezone. Default: `America/Sao_Paulo`.
 
 Example with bearer token:
@@ -198,7 +200,7 @@ Response:
 
 ### POST /scrape
 
-Searches businesses on Google Maps and optionally enriches results with emails, phones, and social networks found on official websites.
+Searches businesses on Google Maps and optionally enriches results with emails, phones, social networks, and reviews.
 
 ```bash
 curl -X POST http://localhost:3000/scrape \
@@ -209,6 +211,8 @@ curl -X POST http://localhost:3000/scrape \
     "maxPlacesPerQuery": 20,
     "scrapeEmails": true,
     "scrapePhones": true,
+    "scrapeReviews": true,
+    "maxReviewsPerPlace": 10,
     "language": "en-US"
   }'
 ```
@@ -219,6 +223,8 @@ Body fields:
 - `maxPlacesPerQuery`: maximum number of valid businesses per search. Default: `20`; maximum limit: `500`.
 - `scrapeEmails`: searches for emails on official websites. Default: `true`.
 - `scrapePhones`: searches for phones on official websites. Default: `true`.
+- `scrapeReviews`: extracts review content from Google Maps. Default: `false`.
+- `maxReviewsPerPlace`: maximum reviews per business when `scrapeReviews` is enabled. Default: `10`; maximum limit: `100`.
 - `language`: language used in Google Maps. Default: `pt-BR`.
 - `proxyConfiguration.proxyUrls`: optional proxy list. The first proxy is used by Chrome.
 
@@ -247,7 +253,15 @@ Response example:
         "linkedin": null,
         "twitter": null,
         "youtube": null
-      }
+      },
+      "reviews": [
+        {
+          "author": "Example customer",
+          "rating": 5,
+          "publishedAt": "2 weeks ago",
+          "text": "Great service."
+        }
+      ]
     }
   ]
 }
@@ -258,6 +272,7 @@ Possible errors:
 - `400`: invalid JSON or empty `searchQueries`.
 - `401`: missing or invalid bearer token.
 - `405`: HTTP method not allowed.
+- `413`: request body too large. The `/scrape` body limit is `1 MiB`.
 - `503`: bearer token not configured on the server.
 - `499`: client canceled the request before completion.
 - `504`: timeout reached during scraping.
@@ -330,6 +345,8 @@ curl -X POST http://localhost:3000/mcp \
         "maxPlacesPerQuery": 20,
         "scrapeEmails": true,
         "scrapePhones": true,
+        "scrapeReviews": true,
+        "maxReviewsPerPlace": 10,
         "language": "en-US"
       }
     }
@@ -408,6 +425,8 @@ If neither `HTTP_BEARER_TOKEN` nor `MCP_BEARER_TOKEN` is set, the server fails c
 
 `MCP_BEARER_TOKEN` is still accepted as a compatibility fallback, but `HTTP_BEARER_TOKEN` is the recommended name for new installations.
 
+The remote MCP HTTP handler also fails closed when no bearer token is configured. This applies even when `/mcp` is mounted directly outside the bundled HTTP gateway.
+
 The server validates the `Origin` header when it is present. By default, calls without an `Origin` header, same-origin calls, and localhost are accepted. To allow specific browser origins, configure:
 
 ```bash
@@ -421,6 +440,17 @@ MCP_ALLOWED_ORIGINS=*
 ```
 
 In production, prefer listing explicit origins instead of using `*`.
+
+#### Dataset Status
+
+When `DATABASE_URL` is configured, each extraction is persisted with a lifecycle status:
+
+- `running`: extraction started and may still be writing places.
+- `finished`: extraction completed successfully.
+- `failed`: extraction ended with an error and may include partial results.
+- `canceled`: the caller canceled the request and partial results may be present.
+
+The same `status`, `finishedAt`, and `error` fields are written to JSONL extraction records when using a file-backed dataset store.
 
 ## MCP Calls
 
@@ -475,6 +505,8 @@ Runs the Google Maps search.
       "maxPlacesPerQuery": 20,
       "scrapeEmails": true,
       "scrapePhones": true,
+      "scrapeReviews": true,
+      "maxReviewsPerPlace": 10,
       "language": "en-US"
     }
   }

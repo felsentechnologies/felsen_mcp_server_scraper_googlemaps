@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -110,6 +111,41 @@ func TestGatewayAllowsValidTokenForMCP(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestScrapeRejectsLargeBody(t *testing.T) {
+	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
+	t.Setenv("MCP_BEARER_TOKEN", "")
+
+	body := `{"searchQueries":["` + strings.Repeat("a", maxScrapeBodyBytes) + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/scrape", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret-token")
+	rec := httptest.NewRecorder()
+
+	New(nil, nil).Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusRequestEntityTooLarge, rec.Body.String())
+	}
+}
+
+func TestScrapeWithNilScraperReturnsServerError(t *testing.T) {
+	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
+	t.Setenv("MCP_BEARER_TOKEN", "")
+
+	body := []byte(`{"searchQueries":["pizza"],"maxPlacesPerQuery":1}`)
+	req := httptest.NewRequest(http.MethodPost, "/scrape", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret-token")
+	rec := httptest.NewRecorder()
+
+	New(nil, nil).Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "scraper is not configured") {
+		t.Fatalf("response = %s, want nil scraper error", rec.Body.String())
 	}
 }
 

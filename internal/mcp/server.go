@@ -3,17 +3,15 @@ package mcp
 import (
 	"bufio"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
-	"os"
 	"strings"
 
 	"mcp_server_scraper_googlemaps/internal/extractors"
+	"mcp_server_scraper_googlemaps/internal/httpauth"
 	"mcp_server_scraper_googlemaps/internal/models"
 	"mcp_server_scraper_googlemaps/internal/scraper"
 )
@@ -63,12 +61,17 @@ func (s *Server) Serve(ctx context.Context) error {
 
 func (s *Server) HTTPHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !validBearerToken(r) {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="mcp"`)
+		token := httpauth.ServerBearerToken()
+		if token == "" {
+			writeJSONRPC(w, http.StatusServiceUnavailable, errorResponse(nil, -32001, "server authentication is not configured"))
+			return
+		}
+		if !httpauth.ValidBearerAuth(r.Header.Get("Authorization"), token) {
+			w.Header().Set("WWW-Authenticate", httpauth.BearerRealm)
 			writeJSONRPC(w, http.StatusUnauthorized, errorResponse(nil, -32001, "unauthorized"))
 			return
 		}
-		if !validOrigin(r) {
+		if _, ok := httpauth.AllowedCORSOrigin(r.Header.Get("Origin"), r.Host); !ok {
 			writeJSONRPC(w, http.StatusForbidden, errorResponse(nil, -32000, "forbidden origin"))
 			return
 		}
@@ -197,6 +200,9 @@ func (s *Server) callTool(ctx context.Context, req request) response {
 
 	switch params.Name {
 	case "scrape_google_maps":
+		if s.scraper == nil {
+			return toolError(req.ID, "scraper is not configured")
+		}
 		var input models.Input
 		if err := json.Unmarshal(params.Arguments, &input); err != nil {
 			return toolError(req.ID, "invalid scrape_google_maps arguments")
@@ -232,7 +238,7 @@ func tools() []map[string]any {
 	return []map[string]any{
 		{
 			"name":        "scrape_google_maps",
-			"description": "Search Google Maps and extract place data plus emails, phones and social links from business websites.",
+			"description": "Search Google Maps and extract place data plus emails, phones, social links and optional reviews.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -244,7 +250,14 @@ func tools() []map[string]any {
 					"maxPlacesPerQuery": map[string]any{"type": "integer", "default": 20, "minimum": 1, "maximum": 500},
 					"scrapeEmails":      map[string]any{"type": "boolean", "default": true},
 					"scrapePhones":      map[string]any{"type": "boolean", "default": true},
-					"language":          map[string]any{"type": "string", "default": "pt-BR"},
+					"scrapeReviews":     map[string]any{"type": "boolean", "default": false},
+					"maxReviewsPerPlace": map[string]any{
+						"type":    "integer",
+						"default": 10,
+						"minimum": 0,
+						"maximum": 100,
+					},
+					"language": map[string]any{"type": "string", "default": "pt-BR"},
 					"proxyConfiguration": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
@@ -315,69 +328,6 @@ func isSupportedProtocolVersion(version string) bool {
 	default:
 		return false
 	}
-}
-
-func validOrigin(r *http.Request) bool {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-
-	for _, allowed := range strings.Split(os.Getenv("MCP_ALLOWED_ORIGINS"), ",") {
-		allowed = strings.TrimSpace(allowed)
-		if allowed == "*" || strings.EqualFold(allowed, origin) {
-			return true
-		}
-	}
-
-	originHost := origin
-	if strings.Contains(origin, "://") {
-		parsedOrigin, err := http.NewRequest(http.MethodGet, origin, nil)
-		if err == nil && parsedOrigin.URL.Host != "" {
-			originHost = parsedOrigin.URL.Host
-		}
-	}
-	host := r.Host
-	originName, _, originErr := net.SplitHostPort(originHost)
-	hostName, _, hostErr := net.SplitHostPort(host)
-	if originErr == nil {
-		originHost = originName
-	}
-	if hostErr == nil {
-		host = hostName
-	}
-
-	return strings.EqualFold(originHost, host) || isLocalhost(originHost)
-}
-
-func isLocalhost(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	return host == "localhost" || host == "127.0.0.1" || host == "::1"
-}
-
-func validBearerToken(r *http.Request) bool {
-	expected := strings.TrimSpace(os.Getenv("HTTP_BEARER_TOKEN"))
-	if expected == "" {
-		expected = strings.TrimSpace(os.Getenv("MCP_BEARER_TOKEN"))
-	}
-	if expected == "" {
-		return true
-	}
-
-	auth := strings.TrimSpace(r.Header.Get("Authorization"))
-	if auth == "" {
-		return false
-	}
-
-	scheme, token, ok := strings.Cut(auth, " ")
-	if !ok || !strings.EqualFold(scheme, "Bearer") {
-		return false
-	}
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
 }
 
 const latestProtocolVersion = "2025-06-18"

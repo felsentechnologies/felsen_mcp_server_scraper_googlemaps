@@ -51,6 +51,7 @@ docker-compose.override.yml
 Thumbs.db
 
 # Local databases and exports
+/dataset/
 *.db
 *.sqlite
 *.sqlite3
