@@ -230,6 +230,9 @@ func TestNewPlaceColumnsPreservesRawDataAndStructuredJSON(t *testing.T) {
 		Reviews: []models.ReviewData{
 			{Author: "Cliente", Rating: &rating, PublishedAt: &publishedAt, Text: "Otimo atendimento."},
 		},
+		Actions: []models.ActionData{
+			{"type": "contact", "status": "pending"},
+		},
 	}
 
 	columns, err := newPlaceColumns(place)
@@ -266,6 +269,14 @@ func TestNewPlaceColumnsPreservesRawDataAndStructuredJSON(t *testing.T) {
 	if len(reviews) != 1 || reviews[0].Author != "Cliente" {
 		t.Fatalf("reviews = %#v", reviews)
 	}
+
+	var actions []models.ActionData
+	if err := json.Unmarshal([]byte(columns.ActionsJSON), &actions); err != nil {
+		t.Fatalf("decode actions: %v", err)
+	}
+	if len(actions) != 1 || actions[0]["type"] != "contact" {
+		t.Fatalf("actions = %#v", actions)
+	}
 }
 
 func TestNewPlaceColumnsDefaultsNilCollections(t *testing.T) {
@@ -281,6 +292,7 @@ func TestNewPlaceColumnsDefaultsNilCollections(t *testing.T) {
 		"emails":  columns.EmailsJSON,
 		"phones":  columns.PhonesJSON,
 		"reviews": columns.ReviewsJSON,
+		"actions": columns.ActionsJSON,
 	} {
 		if got != "[]" {
 			t.Fatalf("%s JSON = %s, want []", label, got)
@@ -306,6 +318,85 @@ func TestOpenFromEnvReturnsNoopWithoutDatabaseURL(t *testing.T) {
 	}
 	if err := store.SaveExtraction(context.Background(), models.Input{}, nil); err != nil {
 		t.Fatalf("SaveExtraction() error = %v", err)
+	}
+}
+
+func TestListPlacesAndUpdateActionsFileStore(t *testing.T) {
+	store := New(t.TempDir(), nil)
+	ctx := context.Background()
+	rating := 4.9
+	category := "Pizzaria"
+	publishedAt := "1 semana atras"
+	first := models.PlaceData{
+		Query:         "pizzarias em Curitiba",
+		Name:          "Pizza Central",
+		Address:       stringPtrForTest("Rua A, 123"),
+		Rating:        &rating,
+		Category:      &category,
+		GoogleMapsURL: "https://www.google.com/maps/place/pizza-central",
+		Emails:        []string{},
+		Phones:        []string{},
+		SocialLinks:   models.EmptySocialLinks(),
+		Reviews: []models.ReviewData{
+			{Author: "Cliente", PublishedAt: &publishedAt, Text: "Muito bom."},
+		},
+	}
+	second := models.PlaceData{
+		Query:         "cafes em Curitiba",
+		Name:          "Cafe Central",
+		Address:       stringPtrForTest("Rua B, 456"),
+		GoogleMapsURL: "https://www.google.com/maps/place/cafe-central",
+		Emails:        []string{},
+		Phones:        []string{},
+		SocialLinks:   models.EmptySocialLinks(),
+		Actions: []models.ActionData{
+			{"type": "contact", "status": "done"},
+		},
+	}
+
+	if err := store.SaveExtraction(ctx, models.Input{SearchQueries: []string{"pizzarias em Curitiba"}}, []models.PlaceData{first, second}); err != nil {
+		t.Fatalf("SaveExtraction() error = %v", err)
+	}
+
+	hasReviews := true
+	result, err := store.ListPlaces(ctx, PlaceListFilter{
+		Category:       "pizz",
+		MinRating:      &rating,
+		HasReviews:     &hasReviews,
+		PendingActions: true,
+	})
+	if err != nil {
+		t.Fatalf("ListPlaces() error = %v", err)
+	}
+	if result.Total != 1 || result.Results[0].Place.Name != first.Name {
+		t.Fatalf("ListPlaces() = %#v, want first place only", result)
+	}
+
+	key := result.Results[0].PlaceKey
+	updated, err := store.UpdatePlaceActions(ctx, 0, key, []models.ActionData{
+		{"type": "call", "status": "pending", "reason": "high rating"},
+	})
+	if err != nil {
+		t.Fatalf("UpdatePlaceActions() error = %v", err)
+	}
+	if len(updated.Actions) != 1 || updated.Actions[0]["type"] != "call" {
+		t.Fatalf("updated.Actions = %#v", updated.Actions)
+	}
+
+	appended, err := store.AppendPlaceAction(ctx, 0, key, models.ActionData{"type": "email", "status": "queued"})
+	if err != nil {
+		t.Fatalf("AppendPlaceAction() error = %v", err)
+	}
+	if len(appended.Actions) != 2 {
+		t.Fatalf("len(appended.Actions) = %d, want 2", len(appended.Actions))
+	}
+
+	missing, err := store.ListPlaces(ctx, PlaceListFilter{MissingActionType: "whatsapp"})
+	if err != nil {
+		t.Fatalf("ListPlaces(missing action) error = %v", err)
+	}
+	if missing.Total != 2 {
+		t.Fatalf("missing.Total = %d, want 2", missing.Total)
 	}
 }
 

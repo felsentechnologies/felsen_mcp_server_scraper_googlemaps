@@ -41,6 +41,13 @@ func NewWithDataset(logger *log.Logger, store *dataset.Store) *Scraper {
 	return &Scraper{logger: logger, dataset: store}
 }
 
+func (s *Scraper) DatasetStore() *dataset.Store {
+	if s == nil {
+		return nil
+	}
+	return s.dataset
+}
+
 func (s *Scraper) ScrapeGoogleMaps(ctx context.Context, input models.Input) (places []models.PlaceData, err error) {
 	input = input.WithDefaults()
 	if err := validateInput(input); err != nil {

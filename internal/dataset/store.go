@@ -229,7 +229,8 @@ SET
 	emails = CASE WHEN jsonb_typeof(raw_data->'emails') = 'array' THEN raw_data->'emails' ELSE emails END,
 	phones = CASE WHEN jsonb_typeof(raw_data->'phones') = 'array' THEN raw_data->'phones' ELSE phones END,
 	social_links = CASE WHEN jsonb_typeof(raw_data->'socialLinks') = 'object' THEN raw_data->'socialLinks' ELSE social_links END,
-	reviews = CASE WHEN jsonb_typeof(raw_data->'reviews') = 'array' THEN raw_data->'reviews' ELSE reviews END
+	reviews = CASE WHEN jsonb_typeof(raw_data->'reviews') = 'array' THEN raw_data->'reviews' ELSE reviews END,
+	actions = CASE WHEN jsonb_typeof(raw_data->'actions') = 'array' THEN raw_data->'actions' ELSE actions END
 WHERE raw_data IS NOT NULL;
 
 UPDATE dataset_places
@@ -530,9 +531,10 @@ INSERT INTO dataset_places (
 	phones,
 	social_links,
 	reviews,
+	actions,
 	raw_data
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 `, e.record.ID,
 		e.record.ExtractedAt,
 		place.Query,
@@ -551,6 +553,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
 		columns.PhonesJSON,
 		columns.SocialLinksJSON,
 		columns.ReviewsJSON,
+		columns.ActionsJSON,
 		columns.RawDataJSON,
 	); err != nil {
 		return false, fmt.Errorf("insert place record: %w", err)
@@ -667,6 +670,7 @@ type placeColumns struct {
 	PhonesJSON      string
 	SocialLinksJSON string
 	ReviewsJSON     string
+	ActionsJSON     string
 	RawDataJSON     string
 }
 
@@ -687,6 +691,10 @@ func newPlaceColumns(place models.PlaceData) (placeColumns, error) {
 	if err != nil {
 		return placeColumns{}, err
 	}
+	actionsJSON, err := marshalJSON(defaultActions(place.Actions), "place actions")
+	if err != nil {
+		return placeColumns{}, err
+	}
 	rawDataJSON, err := marshalJSON(place, "place raw data")
 	if err != nil {
 		return placeColumns{}, err
@@ -699,6 +707,7 @@ func newPlaceColumns(place models.PlaceData) (placeColumns, error) {
 		PhonesJSON:      phonesJSON,
 		SocialLinksJSON: socialLinksJSON,
 		ReviewsJSON:     reviewsJSON,
+		ActionsJSON:     actionsJSON,
 		RawDataJSON:     rawDataJSON,
 	}, nil
 }
@@ -721,6 +730,13 @@ func defaultStrings(values []string) []string {
 func defaultReviews(values []models.ReviewData) []models.ReviewData {
 	if values == nil {
 		return []models.ReviewData{}
+	}
+	return values
+}
+
+func defaultActions(values []models.ActionData) []models.ActionData {
+	if values == nil {
+		return []models.ActionData{}
 	}
 	return values
 }

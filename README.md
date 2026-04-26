@@ -488,6 +488,11 @@ Returned tools:
 
 - `scrape_google_maps`
 - `extract_contacts_from_html`
+- `list_dataset_places`
+- `list_pending_action_places`
+- `get_dataset_place`
+- `update_place_actions`
+- `append_place_action`
 
 ### tools/call: scrape_google_maps
 
@@ -531,3 +536,61 @@ Extracts emails, phones, social networks, and likely contact page URLs from raw 
   }
 }
 ```
+
+### tools/call: list_dataset_places
+
+Lists persisted `dataset_places` records. Requires dataset persistence to be configured.
+
+Useful filters include `query`, `search`, `category`, `minRating`, `maxRating`, `hasReviews`, `pendingActions`, `actionType`, and `missingActionType`.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "tools/call",
+  "params": {
+    "name": "list_dataset_places",
+    "arguments": {
+      "limit": 50,
+      "offset": 0,
+      "category": "Pizza",
+      "minRating": 4.5,
+      "hasReviews": true,
+      "pendingActions": true
+    }
+  }
+}
+```
+
+### tools/call: get_dataset_place
+
+Gets one persisted place by `id` or `placeKey`.
+
+### tools/call: update_place_actions
+
+Replaces `dataset_places.actions` for one place. `actions` must be a JSON array of objects.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "tools/call",
+  "params": {
+    "name": "update_place_actions",
+    "arguments": {
+      "placeKey": "name_address:pizza central|rua a, 123",
+      "actions": [
+        {
+          "type": "call",
+          "status": "pending",
+          "reason": "High rating and recent positive reviews"
+        }
+      ]
+    }
+  }
+}
+```
+
+### tools/call: append_place_action
+
+Appends one action object to `dataset_places.actions` without replacing existing actions. `list_pending_action_places` is a convenience wrapper for places with empty `actions`, or places missing a specific `missingActionType`.

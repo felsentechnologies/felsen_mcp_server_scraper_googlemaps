@@ -34,6 +34,8 @@ type ReviewData struct {
 	Text        string   `json:"text"`
 }
 
+type ActionData map[string]any
+
 type PlaceData struct {
 	Query         string       `json:"query"`
 	Name          string       `json:"name"`
@@ -49,6 +51,7 @@ type PlaceData struct {
 	Phones        []string     `json:"phones"`
 	SocialLinks   SocialLinks  `json:"socialLinks"`
 	Reviews       []ReviewData `json:"reviews,omitempty"`
+	Actions       []ActionData `json:"actions,omitempty"`
 }
 
 func (i Input) WithDefaults() Input {

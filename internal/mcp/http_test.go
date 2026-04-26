@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"mcp_server_scraper_googlemaps/internal/dataset"
+	"mcp_server_scraper_googlemaps/internal/models"
 )
 
 func TestHTTPInitialize(t *testing.T) {
@@ -79,6 +82,9 @@ func TestHTTPToolsList(t *testing.T) {
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte("scrape_google_maps")) {
 		t.Fatalf("response does not list scrape_google_maps: %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("update_place_actions")) {
+		t.Fatalf("response does not list dataset action tools: %s", rec.Body.String())
 	}
 }
 
@@ -179,6 +185,60 @@ func TestHTTPToolCallWithNilScraperReturnsToolError(t *testing.T) {
 	}
 }
 
+func TestHTTPDatasetActionTools(t *testing.T) {
+	store := dataset.New(t.TempDir(), nil)
+	ctx := t.Context()
+	place := models.PlaceData{
+		Query:         "pizzarias em Curitiba",
+		Name:          "Pizza Central",
+		Address:       stringPtrForMCPTest("Rua A, 123"),
+		GoogleMapsURL: "https://www.google.com/maps/place/pizza-central",
+		Emails:        []string{},
+		Phones:        []string{},
+		SocialLinks:   models.EmptySocialLinks(),
+	}
+	if err := store.SaveExtraction(ctx, models.Input{SearchQueries: []string{"pizzarias em Curitiba"}}, []models.PlaceData{place}); err != nil {
+		t.Fatalf("SaveExtraction() error = %v", err)
+	}
+	list, err := store.ListPlaces(ctx, dataset.PlaceListFilter{})
+	if err != nil {
+		t.Fatalf("ListPlaces() error = %v", err)
+	}
+	if list.Total != 1 {
+		t.Fatalf("list.Total = %d, want 1", list.Total)
+	}
+
+	server := NewWithDataset(nil, nil, nil, store, nil)
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      4,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "update_place_actions",
+			"arguments": map[string]any{
+				"placeKey": list.Results[0].PlaceKey,
+				"actions": []map[string]any{
+					{"type": "call", "status": "pending"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req := newAuthorizedRequest(t, http.MethodPost, "/mcp", body)
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("call")) {
+		t.Fatalf("response does not include updated action: %s", rec.Body.String())
+	}
+}
+
 func newAuthorizedRequest(t *testing.T, method, target string, body []byte) *http.Request {
 	t.Helper()
 	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
@@ -186,4 +246,8 @@ func newAuthorizedRequest(t *testing.T, method, target string, body []byte) *htt
 	req := httptest.NewRequest(method, target, bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer secret-token")
 	return req
+}
+
+func stringPtrForMCPTest(value string) *string {
+	return &value
 }

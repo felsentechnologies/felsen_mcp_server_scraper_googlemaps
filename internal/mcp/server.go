@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"mcp_server_scraper_googlemaps/internal/dataset"
 	"mcp_server_scraper_googlemaps/internal/extractors"
 	"mcp_server_scraper_googlemaps/internal/httpauth"
 	"mcp_server_scraper_googlemaps/internal/models"
@@ -20,6 +21,7 @@ type Server struct {
 	in      io.Reader
 	out     io.Writer
 	scraper *scraper.Scraper
+	dataset *dataset.Store
 	logger  *log.Logger
 }
 
@@ -27,7 +29,17 @@ func New(in io.Reader, out io.Writer, scraper *scraper.Scraper, logger *log.Logg
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Server{in: in, out: out, scraper: scraper, logger: logger}
+	var store *dataset.Store
+	if scraper != nil {
+		store = scraper.DatasetStore()
+	}
+	return &Server{in: in, out: out, scraper: scraper, dataset: store, logger: logger}
+}
+
+func NewWithDataset(in io.Reader, out io.Writer, scraper *scraper.Scraper, store *dataset.Store, logger *log.Logger) *Server {
+	server := New(in, out, scraper, logger)
+	server.dataset = store
+	return server
 }
 
 func (s *Server) Serve(ctx context.Context) error {
@@ -229,9 +241,145 @@ func (s *Server) callTool(ctx context.Context, req request) response {
 			result["contactPageUrls"] = extractors.FindContactPageURLs(args.HTML, args.BaseURL)
 		}
 		return toolJSON(req.ID, result)
+	case "list_dataset_places":
+		return s.listDatasetPlaces(ctx, req)
+	case "list_pending_action_places":
+		return s.listPendingActionPlaces(ctx, req)
+	case "get_dataset_place":
+		return s.getDatasetPlace(ctx, req)
+	case "update_place_actions":
+		return s.updatePlaceActions(ctx, req)
+	case "append_place_action":
+		return s.appendPlaceAction(ctx, req)
 	default:
 		return toolError(req.ID, fmt.Sprintf("unknown tool %q", params.Name))
 	}
+}
+
+func (s *Server) listDatasetPlaces(ctx context.Context, req request) response {
+	store, err := s.datasetStore()
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	var filter dataset.PlaceListFilter
+	if len(req.Params) > 0 {
+		var params toolCallParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return toolError(req.ID, "invalid list_dataset_places params")
+		}
+		if len(params.Arguments) > 0 {
+			if err := json.Unmarshal(params.Arguments, &filter); err != nil {
+				return toolError(req.ID, "invalid list_dataset_places arguments")
+			}
+		}
+	}
+	result, err := store.ListPlaces(ctx, filter)
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	return toolJSON(req.ID, result)
+}
+
+func (s *Server) listPendingActionPlaces(ctx context.Context, req request) response {
+	store, err := s.datasetStore()
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	var filter dataset.PlaceListFilter
+	var params toolCallParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return toolError(req.ID, "invalid list_pending_action_places params")
+	}
+	if len(params.Arguments) > 0 {
+		if err := json.Unmarshal(params.Arguments, &filter); err != nil {
+			return toolError(req.ID, "invalid list_pending_action_places arguments")
+		}
+	}
+	if filter.MissingActionType == "" {
+		filter.PendingActions = true
+	}
+	result, err := store.ListPlaces(ctx, filter)
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	return toolJSON(req.ID, result)
+}
+
+func (s *Server) getDatasetPlace(ctx context.Context, req request) response {
+	store, err := s.datasetStore()
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	var args struct {
+		ID       int64  `json:"id,omitempty"`
+		PlaceKey string `json:"placeKey,omitempty"`
+	}
+	if err := unmarshalToolArguments(req.Params, &args); err != nil {
+		return toolError(req.ID, "invalid get_dataset_place arguments")
+	}
+	place, err := store.GetPlace(ctx, args.ID, args.PlaceKey)
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	return toolJSON(req.ID, place)
+}
+
+func (s *Server) updatePlaceActions(ctx context.Context, req request) response {
+	store, err := s.datasetStore()
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	var args struct {
+		ID       int64               `json:"id,omitempty"`
+		PlaceKey string              `json:"placeKey,omitempty"`
+		Actions  []models.ActionData `json:"actions"`
+	}
+	if err := unmarshalToolArguments(req.Params, &args); err != nil {
+		return toolError(req.ID, "invalid update_place_actions arguments")
+	}
+	place, err := store.UpdatePlaceActions(ctx, args.ID, args.PlaceKey, args.Actions)
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	return toolJSON(req.ID, place)
+}
+
+func (s *Server) appendPlaceAction(ctx context.Context, req request) response {
+	store, err := s.datasetStore()
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	var args struct {
+		ID       int64             `json:"id,omitempty"`
+		PlaceKey string            `json:"placeKey,omitempty"`
+		Action   models.ActionData `json:"action"`
+	}
+	if err := unmarshalToolArguments(req.Params, &args); err != nil {
+		return toolError(req.ID, "invalid append_place_action arguments")
+	}
+	place, err := store.AppendPlaceAction(ctx, args.ID, args.PlaceKey, args.Action)
+	if err != nil {
+		return toolError(req.ID, err.Error())
+	}
+	return toolJSON(req.ID, place)
+}
+
+func (s *Server) datasetStore() (*dataset.Store, error) {
+	if s.dataset == nil {
+		return nil, dataset.ErrDatasetUnavailable
+	}
+	return s.dataset, nil
+}
+
+func unmarshalToolArguments(params json.RawMessage, target any) error {
+	var call toolCallParams
+	if err := json.Unmarshal(params, &call); err != nil {
+		return err
+	}
+	if len(call.Arguments) == 0 {
+		call.Arguments = []byte("{}")
+	}
+	return json.Unmarshal(call.Arguments, target)
 }
 
 func tools() []map[string]any {
@@ -269,6 +417,56 @@ func tools() []map[string]any {
 			},
 		},
 		{
+			"name":        "list_dataset_places",
+			"description": "List persisted dataset_places records with pagination and filters for query, category, rating, reviews and actions.",
+			"inputSchema": datasetPlaceFilterSchema(),
+		},
+		{
+			"name":        "list_pending_action_places",
+			"description": "List persisted places that have no actions, or places missing a specific action type when missingActionType is provided.",
+			"inputSchema": datasetPlaceFilterSchema(),
+		},
+		{
+			"name":        "get_dataset_place",
+			"description": "Get one persisted dataset place by id or placeKey.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":       map[string]any{"type": "integer"},
+					"placeKey": map[string]any{"type": "string"},
+				},
+			},
+		},
+		{
+			"name":        "update_place_actions",
+			"description": "Replace dataset_places.actions for one place. Actions must be a JSON array of objects.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":       map[string]any{"type": "integer"},
+					"placeKey": map[string]any{"type": "string"},
+					"actions": map[string]any{
+						"type":  "array",
+						"items": map[string]any{"type": "object"},
+					},
+				},
+				"required": []string{"actions"},
+			},
+		},
+		{
+			"name":        "append_place_action",
+			"description": "Append one JSON object to dataset_places.actions without replacing existing actions.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":       map[string]any{"type": "integer"},
+					"placeKey": map[string]any{"type": "string"},
+					"action":   map[string]any{"type": "object"},
+				},
+				"required": []string{"action"},
+			},
+		},
+		{
 			"name":        "extract_contacts_from_html",
 			"description": "Extract emails, phones, social links and optional contact page URLs from a raw HTML string.",
 			"inputSchema": map[string]any{
@@ -279,6 +477,26 @@ func tools() []map[string]any {
 				},
 				"required": []string{"html"},
 			},
+		},
+	}
+}
+
+func datasetPlaceFilterSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"limit":             map[string]any{"type": "integer", "default": dataset.DefaultPlaceListLimit, "minimum": 1, "maximum": dataset.MaxPlaceListLimit},
+			"offset":            map[string]any{"type": "integer", "default": 0, "minimum": 0},
+			"query":             map[string]any{"type": "string"},
+			"search":            map[string]any{"type": "string"},
+			"category":          map[string]any{"type": "string"},
+			"placeKey":          map[string]any{"type": "string"},
+			"minRating":         map[string]any{"type": "number"},
+			"maxRating":         map[string]any{"type": "number"},
+			"hasReviews":        map[string]any{"type": "boolean"},
+			"pendingActions":    map[string]any{"type": "boolean"},
+			"actionType":        map[string]any{"type": "string"},
+			"missingActionType": map[string]any{"type": "string"},
 		},
 	}
 }
