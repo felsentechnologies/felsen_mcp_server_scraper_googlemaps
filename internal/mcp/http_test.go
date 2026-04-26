@@ -246,6 +246,26 @@ func TestHTTPToolsListIncludesExperimentalToolsWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestHTTPToolsListIncludesDatasetToolsWhenDatasetIsConfigured(t *testing.T) {
+	store := dataset.New(t.TempDir(), nil)
+	server := NewWithDataset(nil, nil, nil, store, nil)
+	body := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	req := newAuthorizedRequest(t, http.MethodPost, "/mcp", body)
+	rec := httptest.NewRecorder()
+
+	server.HTTPHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("list_dataset_places")) {
+		t.Fatalf("response does not list dataset tools when dataset is configured: %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("append_place_action")) {
+		t.Fatalf("response does not list dataset write tools when dataset is configured: %s", rec.Body.String())
+	}
+}
+
 func TestHTTPGetReturnsMethodNotAllowed(t *testing.T) {
 	server := New(nil, nil, nil, nil)
 	req := newAuthorizedRequest(t, http.MethodGet, "/mcp", nil)

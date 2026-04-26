@@ -213,7 +213,7 @@ func (s *Server) handle(ctx context.Context, req request) (response, bool) {
 	case "ping":
 		return response{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{}}, true
 	case "tools/list":
-		return response{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{"tools": tools()}}, true
+		return response{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{"tools": s.tools()}}, true
 	case "tools/call":
 		return s.callTool(ctx, req), true
 	case "resources/list":
@@ -406,7 +406,7 @@ func unmarshalToolArguments(params json.RawMessage, target any) error {
 	return json.Unmarshal(call.Arguments, target)
 }
 
-func tools() []map[string]any {
+func (s *Server) tools() []map[string]any {
 	tools := []map[string]any{
 		toolDescriptor(
 			"scrape_google_maps",
@@ -462,7 +462,7 @@ func tools() []map[string]any {
 			extractContactsOutputSchema(),
 		),
 	}
-	if exposeExperimentalTools() {
+	if s.dataset != nil || exposeExperimentalTools() {
 		tools = append(tools,
 			toolDescriptor(
 				"list_dataset_places",
