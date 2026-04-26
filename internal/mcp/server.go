@@ -419,16 +419,25 @@ func tools() []map[string]any {
 		{
 			"name":        "list_dataset_places",
 			"description": "List persisted dataset_places records with pagination and filters for query, category, rating, reviews and actions.",
+			"annotations": map[string]any{
+				"readOnlyHint": true,
+			},
 			"inputSchema": datasetPlaceFilterSchema(),
 		},
 		{
 			"name":        "list_pending_action_places",
 			"description": "List persisted places that have no actions, or places missing a specific action type when missingActionType is provided.",
+			"annotations": map[string]any{
+				"readOnlyHint": true,
+			},
 			"inputSchema": datasetPlaceFilterSchema(),
 		},
 		{
 			"name":        "get_dataset_place",
 			"description": "Get one persisted dataset place by id or placeKey.",
+			"annotations": map[string]any{
+				"readOnlyHint": true,
+			},
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -440,6 +449,11 @@ func tools() []map[string]any {
 		{
 			"name":        "update_place_actions",
 			"description": "Replace dataset_places.actions for one place. Actions must be a JSON array of objects.",
+			"annotations": map[string]any{
+				"readOnlyHint":    false,
+				"idempotentHint":  true,
+				"destructiveHint": false,
+			},
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -456,6 +470,11 @@ func tools() []map[string]any {
 		{
 			"name":        "append_place_action",
 			"description": "Append one JSON object to dataset_places.actions without replacing existing actions.",
+			"annotations": map[string]any{
+				"readOnlyHint":    false,
+				"idempotentHint":  false,
+				"destructiveHint": false,
+			},
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -469,6 +488,9 @@ func tools() []map[string]any {
 		{
 			"name":        "extract_contacts_from_html",
 			"description": "Extract emails, phones, social links and optional contact page URLs from a raw HTML string.",
+			"annotations": map[string]any{
+				"readOnlyHint": true,
+			},
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
