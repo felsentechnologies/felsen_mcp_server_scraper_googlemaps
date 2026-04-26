@@ -164,6 +164,15 @@ func TestHTTPToolsListAcceptsCurrentProtocolVersion(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte("scrape_google_maps")) {
 		t.Fatalf("response does not list scrape_google_maps: %s", rec.Body.String())
 	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"openai/visibility":"public"`)) {
+		t.Fatalf("response does not include OpenAI visibility metadata: %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"visibility":["model","app"]`)) {
+		t.Fatalf("response does not include UI visibility metadata: %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"outputSchema"`)) {
+		t.Fatalf("response does not include outputSchema metadata: %s", rec.Body.String())
+	}
 }
 
 func TestHTTPGetReturnsMethodNotAllowed(t *testing.T) {
@@ -225,6 +234,9 @@ func TestHTTPBearerTokenValid(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"structuredContent"`)) {
+		t.Fatalf("response does not include structuredContent: %s", rec.Body.String())
 	}
 }
 

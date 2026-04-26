@@ -398,12 +398,12 @@ func unmarshalToolArguments(params json.RawMessage, target any) error {
 
 func tools() []map[string]any {
 	return []map[string]any{
-		{
-			"name":        "scrape_google_maps",
-			"title":       "Scrape Google Maps",
-			"description": "Search Google Maps and extract place data plus emails, phones, social links and optional reviews.",
-			"annotations": toolAnnotations(false, false, false, true),
-			"inputSchema": map[string]any{
+		toolDescriptor(
+			"scrape_google_maps",
+			"Scrape Google Maps",
+			"Use this when you need to search Google Maps and extract business data, emails, phones, social links, and optional reviews.",
+			toolAnnotations(false, false, false, true),
+			map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
@@ -433,27 +433,59 @@ func tools() []map[string]any {
 				},
 				"required": []string{"searchQueries"},
 			},
-		},
-		{
-			"name":        "list_dataset_places",
-			"title":       "List Dataset Places",
-			"description": "List persisted dataset_places records with pagination and filters for query, category, rating, reviews and actions.",
-			"annotations": toolAnnotations(true, false, true, false),
-			"inputSchema": datasetPlaceFilterSchema(),
-		},
-		{
-			"name":        "list_pending_action_places",
-			"title":       "List Pending Action Places",
-			"description": "List persisted places that have no actions, or places missing a specific action type when missingActionType is provided.",
-			"annotations": toolAnnotations(true, false, true, false),
-			"inputSchema": datasetPlaceFilterSchema(),
-		},
-		{
-			"name":        "get_dataset_place",
-			"title":       "Get Dataset Place",
-			"description": "Get one persisted dataset place by id or placeKey.",
-			"annotations": toolAnnotations(true, false, true, false),
-			"inputSchema": map[string]any{
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"count":   map[string]any{"type": "integer"},
+					"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+				},
+				"required": []string{"count", "results"},
+			},
+			"Searching Google Maps...",
+			"Google Maps results ready",
+		),
+		toolDescriptor(
+			"list_dataset_places",
+			"List Dataset Places",
+			"Use this when you need to browse persisted dataset places with filters for query, category, rating, reviews, and actions.",
+			toolAnnotations(true, false, true, false),
+			datasetPlaceFilterSchema(),
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"total":   map[string]any{"type": "integer"},
+					"limit":   map[string]any{"type": "integer"},
+					"offset":  map[string]any{"type": "integer"},
+					"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+				},
+			},
+			"Loading saved places...",
+			"Saved places ready",
+		),
+		toolDescriptor(
+			"list_pending_action_places",
+			"List Pending Action Places",
+			"Use this when you need persisted places that still have no actions or are missing a specific action type.",
+			toolAnnotations(true, false, true, false),
+			datasetPlaceFilterSchema(),
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"total":   map[string]any{"type": "integer"},
+					"limit":   map[string]any{"type": "integer"},
+					"offset":  map[string]any{"type": "integer"},
+					"results": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+				},
+			},
+			"Finding pending places...",
+			"Pending places ready",
+		),
+		toolDescriptor(
+			"get_dataset_place",
+			"Get Dataset Place",
+			"Use this when you need the full persisted record for one place by id or placeKey.",
+			toolAnnotations(true, false, true, false),
+			map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
@@ -461,13 +493,16 @@ func tools() []map[string]any {
 					"placeKey": map[string]any{"type": "string"},
 				},
 			},
-		},
-		{
-			"name":        "update_place_actions",
-			"title":       "Update Place Actions",
-			"description": "Replace dataset_places.actions for one place. Actions must be a JSON array of objects.",
-			"annotations": toolAnnotations(false, true, true, false),
-			"inputSchema": map[string]any{
+			map[string]any{"type": "object"},
+			"Loading place details...",
+			"Place details ready",
+		),
+		toolDescriptor(
+			"update_place_actions",
+			"Update Place Actions",
+			"Use this when you need to replace the actions stored for one persisted place.",
+			toolAnnotations(false, true, true, false),
+			map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
@@ -480,13 +515,16 @@ func tools() []map[string]any {
 				},
 				"required": []string{"actions"},
 			},
-		},
-		{
-			"name":        "append_place_action",
-			"title":       "Append Place Action",
-			"description": "Append one JSON object to dataset_places.actions without replacing existing actions.",
-			"annotations": toolAnnotations(false, false, false, false),
-			"inputSchema": map[string]any{
+			map[string]any{"type": "object"},
+			"Updating place actions...",
+			"Place actions updated",
+		),
+		toolDescriptor(
+			"append_place_action",
+			"Append Place Action",
+			"Use this when you need to append one new action to a persisted place without replacing existing actions.",
+			toolAnnotations(false, false, false, false),
+			map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
@@ -496,13 +534,16 @@ func tools() []map[string]any {
 				},
 				"required": []string{"action"},
 			},
-		},
-		{
-			"name":        "extract_contacts_from_html",
-			"title":       "Extract Contacts From HTML",
-			"description": "Extract emails, phones, social links and optional contact page URLs from a raw HTML string.",
-			"annotations": toolAnnotations(true, false, true, false),
-			"inputSchema": map[string]any{
+			map[string]any{"type": "object"},
+			"Appending place action...",
+			"Place action appended",
+		),
+		toolDescriptor(
+			"extract_contacts_from_html",
+			"Extract Contacts From HTML",
+			"Use this when you already have raw HTML and need emails, phones, social links, or likely contact page URLs.",
+			toolAnnotations(true, false, true, false),
+			map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
@@ -511,6 +552,36 @@ func tools() []map[string]any {
 				},
 				"required": []string{"html"},
 			},
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"emails":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"phones":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"socialLinks":     map[string]any{"type": "object"},
+					"contactPageUrls": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+			},
+			"Extracting contacts...",
+			"Contacts extracted",
+		),
+	}
+}
+
+func toolDescriptor(name, title, description string, annotations map[string]any, inputSchema map[string]any, outputSchema map[string]any, invoking, invoked string) map[string]any {
+	return map[string]any{
+		"name":         name,
+		"title":        title,
+		"description":  description,
+		"annotations":  annotations,
+		"inputSchema":  inputSchema,
+		"outputSchema": outputSchema,
+		"_meta": map[string]any{
+			"ui": map[string]any{
+				"visibility": []string{"model", "app"},
+			},
+			"openai/visibility":              "public",
+			"openai/toolInvocation/invoking": invoking,
+			"openai/toolInvocation/invoked":  invoked,
 		},
 	}
 }
@@ -548,7 +619,8 @@ func datasetPlaceFilterSchema() map[string]any {
 func toolJSON(id *json.RawMessage, value any) response {
 	payload, _ := json.MarshalIndent(value, "", "  ")
 	return response{JSONRPC: "2.0", ID: id, Result: map[string]any{
-		"content": []map[string]string{{"type": "text", "text": string(payload)}},
+		"structuredContent": value,
+		"content":           []map[string]string{{"type": "text", "text": string(payload)}},
 	}}
 }
 
