@@ -386,9 +386,12 @@ func tools() []map[string]any {
 	return []map[string]any{
 		{
 			"name":        "scrape_google_maps",
+			"title":       "Scrape Google Maps",
 			"description": "Search Google Maps and extract place data plus emails, phones, social links and optional reviews.",
+			"annotations": toolAnnotations(false, false, false, true),
 			"inputSchema": map[string]any{
-				"type": "object",
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]any{
 					"searchQueries": map[string]any{
 						"type":        "array",
@@ -407,7 +410,8 @@ func tools() []map[string]any {
 					},
 					"language": map[string]any{"type": "string", "default": "pt-BR"},
 					"proxyConfiguration": map[string]any{
-						"type": "object",
+						"type":                 "object",
+						"additionalProperties": false,
 						"properties": map[string]any{
 							"proxyUrls": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						},
@@ -418,28 +422,26 @@ func tools() []map[string]any {
 		},
 		{
 			"name":        "list_dataset_places",
+			"title":       "List Dataset Places",
 			"description": "List persisted dataset_places records with pagination and filters for query, category, rating, reviews and actions.",
-			"annotations": map[string]any{
-				"readOnlyHint": true,
-			},
+			"annotations": toolAnnotations(true, false, true, false),
 			"inputSchema": datasetPlaceFilterSchema(),
 		},
 		{
 			"name":        "list_pending_action_places",
+			"title":       "List Pending Action Places",
 			"description": "List persisted places that have no actions, or places missing a specific action type when missingActionType is provided.",
-			"annotations": map[string]any{
-				"readOnlyHint": true,
-			},
+			"annotations": toolAnnotations(true, false, true, false),
 			"inputSchema": datasetPlaceFilterSchema(),
 		},
 		{
 			"name":        "get_dataset_place",
+			"title":       "Get Dataset Place",
 			"description": "Get one persisted dataset place by id or placeKey.",
-			"annotations": map[string]any{
-				"readOnlyHint": true,
-			},
+			"annotations": toolAnnotations(true, false, true, false),
 			"inputSchema": map[string]any{
-				"type": "object",
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]any{
 					"id":       map[string]any{"type": "integer"},
 					"placeKey": map[string]any{"type": "string"},
@@ -448,14 +450,12 @@ func tools() []map[string]any {
 		},
 		{
 			"name":        "update_place_actions",
+			"title":       "Update Place Actions",
 			"description": "Replace dataset_places.actions for one place. Actions must be a JSON array of objects.",
-			"annotations": map[string]any{
-				"readOnlyHint":    false,
-				"idempotentHint":  true,
-				"destructiveHint": false,
-			},
+			"annotations": toolAnnotations(false, true, true, false),
 			"inputSchema": map[string]any{
-				"type": "object",
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]any{
 					"id":       map[string]any{"type": "integer"},
 					"placeKey": map[string]any{"type": "string"},
@@ -469,14 +469,12 @@ func tools() []map[string]any {
 		},
 		{
 			"name":        "append_place_action",
+			"title":       "Append Place Action",
 			"description": "Append one JSON object to dataset_places.actions without replacing existing actions.",
-			"annotations": map[string]any{
-				"readOnlyHint":    false,
-				"idempotentHint":  false,
-				"destructiveHint": false,
-			},
+			"annotations": toolAnnotations(false, false, false, false),
 			"inputSchema": map[string]any{
-				"type": "object",
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]any{
 					"id":       map[string]any{"type": "integer"},
 					"placeKey": map[string]any{"type": "string"},
@@ -487,12 +485,12 @@ func tools() []map[string]any {
 		},
 		{
 			"name":        "extract_contacts_from_html",
+			"title":       "Extract Contacts From HTML",
 			"description": "Extract emails, phones, social links and optional contact page URLs from a raw HTML string.",
-			"annotations": map[string]any{
-				"readOnlyHint": true,
-			},
+			"annotations": toolAnnotations(true, false, true, false),
 			"inputSchema": map[string]any{
-				"type": "object",
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]any{
 					"html":    map[string]any{"type": "string"},
 					"baseUrl": map[string]any{"type": "string"},
@@ -503,9 +501,19 @@ func tools() []map[string]any {
 	}
 }
 
+func toolAnnotations(readOnly, destructive, idempotent, openWorld bool) map[string]any {
+	return map[string]any{
+		"readOnlyHint":    readOnly,
+		"destructiveHint": destructive,
+		"idempotentHint":  idempotent,
+		"openWorldHint":   openWorld,
+	}
+}
+
 func datasetPlaceFilterSchema() map[string]any {
 	return map[string]any{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]any{
 			"limit":             map[string]any{"type": "integer", "default": dataset.DefaultPlaceListLimit, "minimum": 1, "maximum": dataset.MaxPlaceListLimit},
 			"offset":            map[string]any{"type": "integer", "default": 0, "minimum": 0},
