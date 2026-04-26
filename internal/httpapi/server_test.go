@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -142,6 +143,38 @@ func TestGatewayAllowsValidTokenForMCP(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestGatewayLogsRequestAndResponse(t *testing.T) {
+	t.Setenv("HTTP_BEARER_TOKEN", "secret-token")
+	t.Setenv("MCP_BEARER_TOKEN", "")
+
+	var logs bytes.Buffer
+	logger := log.New(&logs, "", 0)
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret-token")
+	req.Header.Set("Origin", "https://chatgpt.com")
+	rec := httptest.NewRecorder()
+
+	New(nil, logger).Handler().ServeHTTP(rec, req)
+
+	output := logs.String()
+	if !strings.Contains(output, `"event":"http_request_received"`) {
+		t.Fatalf("logs do not include request event: %s", output)
+	}
+	if !strings.Contains(output, `"event":"http_response_sent"`) {
+		t.Fatalf("logs do not include response event: %s", output)
+	}
+	if !strings.Contains(output, `"jsonrpc_method":"tools/list"`) {
+		t.Fatalf("logs do not include JSON-RPC method: %s", output)
+	}
+	if strings.Contains(output, "secret-token") {
+		t.Fatalf("logs should redact authorization token: %s", output)
+	}
+	if !strings.Contains(output, `[REDACTED]`) {
+		t.Fatalf("logs should include redacted authorization marker: %s", output)
 	}
 }
 

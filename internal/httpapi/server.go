@@ -42,7 +42,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		mcpHandler.ServeHTTP(w, r)
 	})
-	return withCORS(withSecurityGateway(mux))
+	return withHTTPLogging(withCORS(withSecurityGateway(mux)), s.logger)
 }
 
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
